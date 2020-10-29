@@ -28,3 +28,14 @@ class LookupModule(LookupBase):
             results.append(query.execute(storage, term, variables))
 
         return results
+
+
+# get@jmespath://path/to/entry.property#default
+# get@jmespath://dummy
+# get://dummy.password#
+# get://dummy.custom1#value
+# put://local/master.password#OVERWRITE_VALUE
+# post://local/master.password#NEW_VALUE_IF_NOT_EXISTS
+# put://local/master#{username: "", password: ""}
+# del://local/master.password
+# del://local/master
