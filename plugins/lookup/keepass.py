@@ -34,8 +34,7 @@ class LookupModule(LookupBase):
 # get@jmespath://dummy
 # get://dummy.password#
 # get://dummy.custom1#value
-# put://local/master.password#OVERWRITE_VALUE
-# post://local/master.password#NEW_VALUE_IF_NOT_EXISTS
 # put://local/master#{username: "", password: ""}
+# post://local/master#{username: "", password: ""}
 # del://local/master.password
 # del://local/master

@@ -5,7 +5,7 @@ __metaclass__ = type
 import re
 
 import jmespath
-from ansible.errors import AnsibleParserError, AnsibleError
+from ansible.errors import AnsibleParserError
 from ansible.utils.display import Display
 
 display = Display()
@@ -36,9 +36,16 @@ class Query(object):
         }
 
         if not query["verb"]:
-            raise AttributeError(u"'Invalid query - no verb '%s'" % query)
+            raise AttributeError(u"'Invalid query - no verb")
         if not query["path"]:
-            raise AttributeError(u"'Invalid query - no path '%s'" % query)
+            raise AttributeError(u"'Invalid query - no path")
+        if query["verb"] == "del" and query["default_value"] is not None:
+            raise AttributeError(u"'Invalid query - cannot provide default/new value")
+        if query["verb"] in ["put", "post"]:
+            if query["property"] is not None:
+                raise AttributeError(u"'Invalid query - cannot provide value for property")
+            if query["default_value"] is None:
+                raise AttributeError(u"'Invalid query - need to provide insert/update value")
 
         return query
 

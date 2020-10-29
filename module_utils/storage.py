@@ -4,6 +4,7 @@ __metaclass__ = type
 
 import base64
 import os
+import json
 import uuid
 
 from ansible.errors import AnsibleError
@@ -13,6 +14,7 @@ from pykeepass import PyKeePass
 display = Display()
 
 
+# noinspection PyBroadException
 class Storage(object):
     def __init__(self):
         self._databases = {}
@@ -20,6 +22,27 @@ class Storage(object):
     @staticmethod
     def _get_location(database_details):
         return os.path.abspath(os.path.expanduser(os.path.expandvars(database_details.get("location"))))
+
+    @staticmethod
+    def _entry_dump(entry):
+        return {
+            "title": getattr(entry, 'title', None),
+            "username": getattr(entry, 'username', None),
+            "password": getattr(entry, 'password', None),
+            "url": getattr(entry, 'url', None),
+            "notes": getattr(entry, 'notes', None),
+            "custom_properties": getattr(entry, 'custom_properties', None),
+            "attachments": [{"filename": attachment.filename, "length": len(attachment.binary)} for index, attachment in enumerate(entry.attachments)] or []
+        }
+
+    @staticmethod
+    def _get_binary(possibly_base64_encoded):
+        try:
+            binary_stream = base64.b64decode(possibly_base64_encoded)
+            if base64.b64encode(binary_stream) == possibly_base64_encoded:
+                return binary_stream, True
+        except Exception:
+            return possibly_base64_encoded, False
 
     def _open(self, database_details):
         try:
@@ -44,6 +67,7 @@ class Storage(object):
 
             display.v(u"Keepass: database opened - %s" % database_location)
             return self._databases[database_location]
+
         except Exception as error:
             raise AttributeError(u"'Cannot open database - '%s'" % error)
 
@@ -54,67 +78,122 @@ class Storage(object):
             if database is not None:
                 database.save()
             display.v(u"Keepass: database saved - %s" % database_location)
+
         except Exception as error:
             raise AttributeError(u"'Cannot save database - '%s'" % error)
 
-    def _find_by_path(self, database_details, path):
-        entry = self._open(database_details).find_entries_by_path(path, first=True)
-        if entry is None:
+    def _find_by_path(self, database_details, path, not_found_throw=True):
+        database = self._open(database_details)
+        entry = database.find_entries_by_path(path, first=True)
+        if not_found_throw and entry is None:
             raise AnsibleError(u"Entry '%s' is not found" % path)
         display.vv(u"KeePass: entry found - %s" % path)
-        return entry
+        return entry, database
 
-    def _find_by_uuid(self, database_details, path, uuid_id):
-        entry = self._open(database_details).find_entries_by_uuid(uuid_id, first=True)
-        if entry is None:
+    def _find_by_uuid(self, database_details, path, uuid_id, not_found_throw=True):
+        database = self._open(database_details)
+        entry = database.find_entries_by_uuid(uuid_id, first=True)
+        if not_found_throw and entry is None:
             raise AnsibleError(u"Entry '%s' referencing another entry is not found" % path)
         display.vv(u"KeePass: referencing entry found - %s" % path)
-        return entry
+        return entry, database
 
-    @staticmethod
-    def _entry_dump(entry):
-        return {
-            "title": getattr(entry, 'title', None),
-            "username": getattr(entry, 'username', None),
-            "password": getattr(entry, 'password', None),
-            "url": getattr(entry, 'url', None),
-            "notes": getattr(entry, 'notes', None),
-            "custom_properties": getattr(entry, 'custom_properties', None),
-            "attachments": [{"filename": attachment.filename, "binary": base64.b64encode(attachment.binary)} for index, attachment in enumerate(entry.attachments)] or []
-        }
+    def _entry_upsert(self, must_not_exists, database_details, query, check_mode):
+        entry, database = self._find_by_path(database_details, query["path"], False)
+        if must_not_exists and entry is not None:
+            raise AttributeError(u"'Invalid query - cannot post/insert when entry exists [%s]" % query["path"])
+
+        json_payload = json.load(query["default_value"])
+        group = ""
+        title = query["path"]
+        if entry is not None:
+            if "/" in title:
+                group = title.rsplit('/')[0]
+                title = title.rsplit('/')[1]
+            group = database.find_groups(path=group, regex=False, first=True)
+            if group is None:
+                raise AttributeError(u"'Invalid query - group does not exists [%s]" % query["path"])
+        else:
+            group = getattr(entry, "group")
+            title = getattr(entry, "title")
+
+        if not check_mode:
+            entry = database.add_entry(
+                destination_group=group,
+                title=title,
+                username=getattr(json_payload, "username", ""),
+                password=getattr(json_payload, "password", ""),
+                url=getattr(json_payload, "url", None),
+                notes=getattr(json_payload, "notes", None),
+                expiry_time=getattr(json_payload, "expiry_time", None),
+                tags=getattr(json_payload, "tags", None),
+                force_creation=must_not_exists)
+
+        for key in ["title", "username", "password", "url", "notes", "expiry_time", "tags"]:
+            json_payload.pop(key, None)
+
+        for key in json_payload.keys():
+            if key == "attachments":
+                attachments = json_payload[key]
+                next_id = len(entry.attachments)
+                for item in attachments:
+                    filename = item["filename"]
+                    binary = Storage._get_binary(item["binary"])
+                    if not check_mode:
+                        attachment = entry.add_attachment(next_id, filename)
+                        attachment.binary = binary
+                        next_id = next_id + 1
+            elif not check_mode:
+                entry.set_custom_property(key, json_payload[key])
+
+        self._save(database_details) and not check_mode
+        return self._find_by_path(database_details, query["path"], not check_mode)
 
     def get(self, database_details, query, check_mode=False):
-        entry = self._find_by_path(database_details, query["path"])
+        entry, database = self._find_by_path(database_details, query["path"])
         if query["property"] is None:
-            return [Storage._entry_dump(entry)]
+            return Storage._entry_dump(entry)
 
         # get entry value
         result = getattr(entry, query["property"], None) or \
             entry.custom_properties.get(query["property"], None) or \
             ([attachment for index, attachment in enumerate(entry.attachments) if attachment.filename == query["property"]] or [None])[0] or \
-            query["default_value"]
+            (None if check_mode else query["default_value"])
 
         # get reference value
         if query["property"] in ['title', 'username', 'password', 'url', 'notes', 'uuid']:
             if hasattr(result, 'startswith') and result.startswith('{REF:'):
                 entry = self._find_by_uuid(database_details, query["path"], uuid.UUID(result.split(":")[2].strip('}')))
-                result = getattr(entry, query["property"], query["default_value"])
+                result = getattr(entry, query["property"], (None if check_mode else query["default_value"]))
 
         # return result
-        if query["default_value_is_provided"] or result is not None:
-            return [base64.b64encode(result.binary) if hasattr(result, 'binary') else result]
+        if result is not None or (query["default_value_is_provided"] and not check_mode):
+            return base64.b64encode(result.binary) if hasattr(result, 'binary') else result
 
         # throw error, value not found
         raise AttributeError(u"'No property/file found '%s'" % query["property"])
 
-    def put(self, database_details, query, check_mode=False):
-
-        return None
-
     def post(self, database_details, query, check_mode=False):
+        return self._entry_upsert(True, database_details, query, check_mode)
 
-        return None
+    def put(self, database_details, query, check_mode=False):
+        return self._entry_upsert(False, database_details, query, check_mode)
 
     def delete(self, database_details, query, check_mode=False):
+        entry, database = self._find_by_path(database_details, query["path"])
+        if query["property"] is None:
+            database.delete_entry(entry) and not check_mode
+        elif hasattr(entry, query["property"]):
+            setattr(entry, query["property"], None) and not check_mode
+        elif query["property"] in entry.custom_properties.keys():
+            entry.delete_custom_property(query["property"]) and not check_mode
+        else:
+            attachments = entry.find_attachments(filename=query["property"], regex=True)
+            if attachments is None:
+                return False
+            elif not check_mode:
+                for attachment in attachments:
+                    entry.delete_attachment(attachment)
 
-        return None
+        self._save(database_details) and not check_mode
+        return True
