@@ -15,9 +15,64 @@ display = Display()
 
 class Storage(object):
     def __init__(self):
-        self.databases = {}
+        self._databases = {}
 
-    def __dump__(self, entry):
+    @staticmethod
+    def _get_location(database_details):
+        return os.path.abspath(os.path.expanduser(os.path.expandvars(database_details.get("location"))))
+
+    def _open(self, database_details):
+        try:
+            database_location = Storage._get_location(database_details)
+            if self._databases.get(database_location) is None:
+                # get database location
+                if os.path.isfile(database_location):
+                    display.v(u"Keepass: database found - %s" % database_location)
+
+                # get database password
+                database_password = database_details.get("password", '')
+
+                # get database keyfile
+                database_keyfile = database_details.get("keyfile", None)
+                if database_keyfile:
+                    database_keyfile = os.path.abspath(os.path.expanduser(os.path.expandvars(database_keyfile)))
+                    if os.path.isfile(database_keyfile):
+                        display.vvv(u"Keepass: database keyfile - %s" % database_keyfile)
+
+                self._databases[database_location] = \
+                    PyKeePass(database_location, database_password, database_keyfile)
+
+            display.v(u"Keepass: database opened - %s" % database_location)
+            return self._databases[database_location]
+        except Exception as error:
+            raise AttributeError(u"'Cannot open database - '%s'" % error)
+
+    def _save(self, database_details):
+        try:
+            database_location = Storage._get_location(database_details)
+            database = self._databases[database_location]
+            if database is not None:
+                database.save()
+            display.v(u"Keepass: database saved - %s" % database_location)
+        except Exception as error:
+            raise AttributeError(u"'Cannot save database - '%s'" % error)
+
+    def _find_by_path(self, database_details, path):
+        entry = self._open(database_details).find_entries_by_path(path, first=True)
+        if entry is None:
+            raise AnsibleError(u"Entry '%s' is not found" % path)
+        display.vv(u"KeePass: entry found - %s" % path)
+        return entry
+
+    def _find_by_uuid(self, database_details, path, uuid_id):
+        entry = self._open(database_details).find_entries_by_uuid(uuid_id, first=True)
+        if entry is None:
+            raise AnsibleError(u"Entry '%s' referencing another entry is not found" % path)
+        display.vv(u"KeePass: referencing entry found - %s" % path)
+        return entry
+
+    @staticmethod
+    def _entry_dump(entry):
         return {
             "title": getattr(entry, 'title', None),
             "username": getattr(entry, 'username', None),
@@ -28,43 +83,10 @@ class Storage(object):
             "attachments": [{"filename": attachment.filename, "binary": base64.b64encode(attachment.binary)} for index, attachment in enumerate(entry.attachments)] or []
         }
 
-    def __open__(self, database_details):
-        database_location = os.path.abspath(os.path.expanduser(os.path.expandvars(database_details.get("location"))))
-        if self.databases.get(database_location) is None:
-            # get database location
-            if os.path.isfile(database_location):
-                display.v(u"Keepass: database found - %s" % database_location)
-
-            # get database password
-            database_password = database_details.get("password", '')
-
-            # get database keyfile
-            database_keyfile = database_details.get("keyfile", None)
-            if database_keyfile:
-                database_keyfile = os.path.abspath(os.path.expanduser(os.path.expandvars(database_keyfile)))
-                if os.path.isfile(database_keyfile):
-                    display.vvv(u"Keepass: database keyfile - %s" % database_keyfile)
-
-            self.databases[database_location] = \
-                PyKeePass(database_location, database_password, database_keyfile)
-
-        display.v(u"Keepass: database opened - %s" % database_location)
-        return self.databases[database_location]
-
-    def __find_by_path__(self, database_details, path):
-        return self.__open__(database_details).find_entries_by_path(path, first=True)
-
-    def __find_by_uuid__(self, database_details, uuid_id):
-        return self.__open__(database_details).find_entries_by_uuid(uuid_id, first=True)
-
     def get(self, database_details, query, check_mode=False):
-        entry = self.__find_by_path__(database_details, query["path"])
-        if entry is None:
-            raise AnsibleError(u"Entry '%s' is not found" % query["path"])
-        display.vv(u"KeePass: entry found - %s" % query["path"])
-
+        entry = self._find_by_path(database_details, query["path"])
         if query["property"] is None:
-            return [self.__dump__(entry)]
+            return [Storage._entry_dump(entry)]
 
         # get entry value
         result = getattr(entry, query["property"], None) or \
@@ -75,7 +97,7 @@ class Storage(object):
         # get reference value
         if query["property"] in ['title', 'username', 'password', 'url', 'notes', 'uuid']:
             if hasattr(result, 'startswith') and result.startswith('{REF:'):
-                entry = self.__find_by_uuid__(database_details, uuid.UUID(result.split(":")[2].strip('}')))
+                entry = self._find_by_uuid(database_details, query["path"], uuid.UUID(result.split(":")[2].strip('}')))
                 result = getattr(entry, query["property"], query["default_value"])
 
         # return result
@@ -83,7 +105,7 @@ class Storage(object):
             return [base64.b64encode(result.binary) if hasattr(result, 'binary') else result]
 
         # throw error, value not found
-        raise AnsibleError(AttributeError(u"'No property/file found '%s'" % query["property"]))
+        raise AttributeError(u"'No property/file found '%s'" % query["property"])
 
     def put(self, database_details, query, check_mode=False):
 

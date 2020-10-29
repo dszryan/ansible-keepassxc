@@ -5,7 +5,7 @@ __metaclass__ = type
 import re
 
 import jmespath
-from ansible.errors import AnsibleParserError
+from ansible.errors import AnsibleParserError, AnsibleError
 from ansible.utils.display import Display
 
 display = Display()
@@ -13,9 +13,15 @@ display = Display()
 
 class Query(object):
     def __init__(self):
-        self.defaults = self.get_defaults
+        self.defaults = self._defaults
 
-    def __get__(self, search):
+    @property
+    def _defaults(self):
+        return {
+            'database': 'keepass.ansible'
+        }
+
+    def _get(self, search):
         pattern = "(get|put|post|del)(@(((?!:\\/\\/)[\\S])*))?(:\\/\\/(((?!#|\\?)[\\S])*))(\\?(((?!#)[\\s\\S])*)(#([\\s\\S]*))?)?"
         matches = re.findall(pattern, search)
         display.vv(u"Keepass: matches - %s}" % matches)
@@ -30,30 +36,21 @@ class Query(object):
         }
 
         if not query["verb"]:
-            raise AnsibleParserError(AttributeError(u"'Invalid query - no verb '%s'" % query))
+            raise AttributeError(u"'Invalid query - no verb '%s'" % query)
         if not query["path"]:
-            raise AnsibleParserError(AttributeError(u"'Invalid query - no path '%s'" % query))
+            raise AttributeError(u"'Invalid query - no path '%s'" % query)
 
         return query
 
-    @property
-    def get_defaults(self):
-        return {
-            'database': 'keepass.ansible'
-        }
-
     def execute(self, storage, term, variables, read_only=True, check_mode=False):
-        result = {
-            'success': True,
-            'changed': False
-        }
+        result = {'success': True, 'changed': False, 'stdout': {}, 'stderr': {}}
 
         try:
-            result["query"] = self.__get__(term)
+            result["query"] = self._get(term)
             display.v(u"Keepass: query - %s}" % result["query"])
 
             if read_only and result["query"]["verb"] != "get":
-                raise AnsibleParserError(AttributeError(u"'Invalid query - incorrect verb '%s' (get only supported)" % result["query"]["verb"]))
+                raise AttributeError(u"'Invalid query - incorrect verb (should be 'get') - '%s'" % result["query"]["verb"])
 
             execute = getattr(storage, result["query"]["verb"])
             result["stdout"] = execute(jmespath.search(result["query"]["database"], variables), result["query"], check_mode)
@@ -62,5 +59,5 @@ class Query(object):
             return result
         except Exception as error:
             result["success"] = False
-            result["stderr"] = error
+            result["stderr"] = AnsibleParserError(error)
             return result
