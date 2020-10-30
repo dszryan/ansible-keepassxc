@@ -5,6 +5,7 @@ __metaclass__ = type
 import importlib.util
 import pathlib
 
+from ansible.plugins import display
 from ansible.plugins.lookup import LookupBase
 
 
@@ -20,8 +21,8 @@ class Helper:
 
 class LookupModule(LookupBase):
     def run(self, terms, variables=None, **kwargs):
-        storage = Helper.import_util("storage", "Storage")
-        query = Helper.import_util("query", "Query")
+        storage = Helper.import_util("storage", "Storage", display)
+        query = Helper.import_util("query", "Query", display)
 
         results = []
         for term in terms:
@@ -30,8 +31,8 @@ class LookupModule(LookupBase):
         return results
 
 
-# get@jmespath://path/to/entry.property#default
-# get@jmespath://dummy
+# get+jmespath://path/to/entry.property#default
+# get+jmespath://dummy
 # get://dummy.password#
 # get://dummy.custom1#value
 # put://local/master#{username: "", password: ""}

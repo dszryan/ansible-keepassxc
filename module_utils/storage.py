@@ -8,15 +8,13 @@ import json
 import uuid
 
 from ansible.errors import AnsibleError
-from ansible.utils.display import Display
 from pykeepass import PyKeePass
-
-display = Display()
 
 
 # noinspection PyBroadException
 class Storage(object):
-    def __init__(self):
+    def __init__(self, display):
+        self._display = display
         self._databases = {}
 
     @staticmethod
@@ -32,7 +30,13 @@ class Storage(object):
             "url": getattr(entry, 'url', None),
             "notes": getattr(entry, 'notes', None),
             "custom_properties": getattr(entry, 'custom_properties', None),
-            "attachments": [{"filename": attachment.filename, "length": len(attachment.binary)} for index, attachment in enumerate(entry.attachments)] or []
+            "attachments": [
+                               {
+                                   "filename": attachment.filename,
+                                   "length": len(attachment.binary)
+                               }
+                               for index, attachment in enumerate(entry.attachments)
+                           ] or []
         }
 
     @staticmethod
@@ -44,82 +48,65 @@ class Storage(object):
         except Exception:
             return possibly_base64_encoded, False
 
-    def _open(self, database_details):
-        try:
-            database_location = Storage._get_location(database_details)
-            if self._databases.get(database_location) is None:
-                # get database location
-                if os.path.isfile(database_location):
-                    display.v(u"Keepass: database found - %s" % database_location)
+    def _open(self, database_details, query):
+        database_location = Storage._get_location(database_details)
+        if self._databases.get(database_location) is None:
+            # get database location
+            if os.path.isfile(database_location):
+                self._display.v(u"Keepass: database found - %s" % query)
 
-                # get database password
-                database_password = database_details.get("password", '')
+            # get database password
+            database_password = database_details.get("password", '')
 
-                # get database keyfile
-                database_keyfile = database_details.get("keyfile", None)
-                if database_keyfile:
-                    database_keyfile = os.path.abspath(os.path.expanduser(os.path.expandvars(database_keyfile)))
-                    if os.path.isfile(database_keyfile):
-                        display.vvv(u"Keepass: database keyfile - %s" % database_keyfile)
+            # get database keyfile
+            database_keyfile = database_details.get("keyfile", None)
+            if database_keyfile:
+                database_keyfile = os.path.abspath(os.path.expanduser(os.path.expandvars(database_keyfile)))
+                if os.path.isfile(database_keyfile):
+                    self._display.vvv(u"Keepass: database keyfile - %s" % query)
 
-                self._databases[database_location] = \
-                    PyKeePass(database_location, database_password, database_keyfile)
+            self._databases[database_location] = \
+                PyKeePass(database_location, database_password, database_keyfile)
 
-            display.v(u"Keepass: database opened - %s" % database_location)
-            return self._databases[database_location]
+        self._display.v(u"Keepass: database opened - %s" % query)
+        return self._databases[database_location]
 
-        except Exception as error:
-            raise AttributeError(u"'Cannot open database - '%s'" % error)
+    def _save(self, database_details, query):
+        database = database_details if isinstance(database_details, type(PyKeePass)) == str else self._open(database_details, query)
+        database.save()
+        self._display.v(u"Keepass: database saved - %s" % query)
 
-    def _save(self, database_details):
-        try:
-            database_location = Storage._get_location(database_details)
-            database = self._databases[database_location]
-            if database is not None:
-                database.save()
-            display.v(u"Keepass: database saved - %s" % database_location)
-
-        except Exception as error:
-            raise AttributeError(u"'Cannot save database - '%s'" % error)
-
-    def _find_by_path(self, database_details, path, not_found_throw=True):
-        database = self._open(database_details)
-        entry = database.find_entries_by_path(path, first=True)
+    def _find(self, database_details, query, uuid_id=None, not_found_throw=True):
+        database = database_details if isinstance(database_details, type(PyKeePass)) == str else self._open(database_details, query)
+        entry = database.find_entries_by_path(query["path"], first=True) if uuid_id is None else database.find_entries_by_uuid(uuid_id, first=True)
         if not_found_throw and entry is None:
-            raise AnsibleError(u"Entry '%s' is not found" % path)
-        display.vv(u"KeePass: entry found - %s" % path)
-        return entry, database
-
-    def _find_by_uuid(self, database_details, path, uuid_id, not_found_throw=True):
-        database = self._open(database_details)
-        entry = database.find_entries_by_uuid(uuid_id, first=True)
-        if not_found_throw and entry is None:
-            raise AnsibleError(u"Entry '%s' referencing another entry is not found" % path)
-        display.vv(u"KeePass: referencing entry found - %s" % path)
+            raise AnsibleError(u"Entry is not found")
+        self._display.vv(u"KeePass: entry%s found - %s" % ("" if uuid is None else " (and its reference)", query))
         return entry, database
 
     def _entry_upsert(self, must_not_exists, database_details, query, check_mode):
-        entry, database = self._find_by_path(database_details, query["path"], False)
+        entry, database = self._find(database_details, query, not_found_throw=False)
         if must_not_exists and entry is not None:
-            raise AttributeError(u"'Invalid query - cannot post/insert when entry exists [%s]" % query["path"])
+            raise AttributeError(u"Invalid query - cannot post/insert when entry exists")
 
         json_payload = json.load(query["default_value"])
-        group = ""
-        title = query["path"]
-        if entry is not None:
-            if "/" in title:
-                group = title.rsplit('/')[0]
-                title = title.rsplit('/')[1]
-            group = database.find_groups(path=group, regex=False, first=True)
-            if group is None:
-                raise AttributeError(u"'Invalid query - group does not exists [%s]" % query["path"])
-        else:
-            group = getattr(entry, "group")
-            title = getattr(entry, "title")
+        path_split = (entry.path if entry is not None else query["path"]).rsplit('/', 1)
+        title = path_split if len(path_split) == 1 else path_split[1]
+        group = "" if len(path_split) == 1 else path_split[0]
+
+        destination_group = database.find_groups(path=group, regex=False, first=True)
+        if not check_mode and destination_group is None:
+            previous_group = database.root_group()
+            for path in query["path"].split('/'):
+                group = database.find_groups(name=path, regex=False, first=True)
+                if group is None:
+                    group = database.add_group(previous_group, path)
+                previous_group = group
+            destination_group = previous_group
 
         if not check_mode:
             entry = database.add_entry(
-                destination_group=group,
+                destination_group=destination_group,
                 title=title,
                 username=getattr(json_payload, "username", ""),
                 password=getattr(json_payload, "password", ""),
@@ -146,11 +133,16 @@ class Storage(object):
             elif not check_mode:
                 entry.set_custom_property(key, json_payload[key])
 
-        self._save(database_details) and not check_mode
-        return self._find_by_path(database_details, query["path"], not check_mode)
+        if not check_mode:
+            self._save(database, query)
+            return Storage._entry_dump(self._find(database, query, not_found_throw=(not check_mode))[0])
+        elif entry is not None:
+            return Storage._entry_dump(entry)
+        else:
+            return {}
 
     def get(self, database_details, query, check_mode=False):
-        entry, database = self._find_by_path(database_details, query["path"])
+        entry, database = self._find(database_details, query)
         if query["property"] is None:
             return Storage._entry_dump(entry)
 
@@ -163,15 +155,16 @@ class Storage(object):
         # get reference value
         if query["property"] in ['title', 'username', 'password', 'url', 'notes', 'uuid']:
             if hasattr(result, 'startswith') and result.startswith('{REF:'):
-                entry = self._find_by_uuid(database_details, query["path"], uuid.UUID(result.split(":")[2].strip('}')))
+                entry, database = self._find(database, query, uuid.UUID(result.split(":")[2].strip('}')))
                 result = getattr(entry, query["property"], (None if check_mode else query["default_value"]))
 
         # return result
         if result is not None or (query["default_value_is_provided"] and not check_mode):
+            self._display.vv(u"KeePass: found property/file on entry - %s" % query)
             return base64.b64encode(result.binary) if hasattr(result, 'binary') else result
 
         # throw error, value not found
-        raise AttributeError(u"'No property/file found '%s'" % query["property"])
+        raise AttributeError(u"No property/file found")
 
     def post(self, database_details, query, check_mode=False):
         return self._entry_upsert(True, database_details, query, check_mode)
@@ -180,7 +173,7 @@ class Storage(object):
         return self._entry_upsert(False, database_details, query, check_mode)
 
     def delete(self, database_details, query, check_mode=False):
-        entry, database = self._find_by_path(database_details, query["path"])
+        entry, database = self._find(database_details, query)
         if query["property"] is None:
             database.delete_entry(entry) and not check_mode
         elif hasattr(entry, query["property"]):
@@ -195,5 +188,5 @@ class Storage(object):
                 for attachment in attachments:
                     entry.delete_attachment(attachment)
 
-        self._save(database_details) and not check_mode
+        self._save(database, query) and not check_mode
         return True

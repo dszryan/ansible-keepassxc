@@ -3,16 +3,15 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import re
+import traceback
 
 import jmespath
-from ansible.errors import AnsibleParserError
-from ansible.utils.display import Display
-
-display = Display()
+from ansible.module_utils.common.text.converters import to_native
 
 
 class Query(object):
-    def __init__(self):
+    def __init__(self, display):
+        self._display = display
         self.defaults = self._defaults
 
     @property
@@ -22,9 +21,9 @@ class Query(object):
         }
 
     def _get(self, search):
-        pattern = "(get|put|post|del)(@(((?!:\\/\\/)[\\S])*))?(:\\/\\/(((?!#|\\?)[\\S])*))(\\?(((?!#)[\\s\\S])*)(#([\\s\\S]*))?)?"
+        pattern = "(get|put|post|del)(\\+(((?!:\\/\\/)[\\S])*))?(:\\/\\/(((?!#|\\?)[\\S])*))(\\?(((?!#)[\\s\\S])*)(#([\\s\\S]*))?)?"
         matches = re.findall(pattern, search)
-        display.vv(u"Keepass: matches - %s}" % matches)
+        self._display.vv(u"Keepass: matches - %s}" % matches)
 
         query = {
             'verb': matches[0][0],
@@ -54,7 +53,7 @@ class Query(object):
 
         try:
             result["query"] = self._get(term)
-            display.v(u"Keepass: query - %s}" % result["query"])
+            self._display.v(u"Keepass: query - %s}" % result["query"])
 
             if read_only and result["query"]["verb"] != "get":
                 raise AttributeError(u"'Invalid query - incorrect verb (should be 'get') - '%s'" % result["query"]["verb"])
@@ -66,5 +65,9 @@ class Query(object):
             return result
         except Exception as error:
             result["success"] = False
-            result["stderr"] = AnsibleParserError(error)
+            result["stderr"] = {
+                'term': term,
+                'traceback': traceback.format_exc(),
+                'error': to_native(error)
+            }
             return result
