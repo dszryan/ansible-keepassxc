@@ -10,64 +10,71 @@ from ansible.module_utils.common.text.converters import to_native
 
 
 class Query(object):
-    def __init__(self, display):
+    def __init__(self, storage, display, read_only=True, check_mode=False):
+        self._storage = storage
         self._display = display
-        self.defaults = self._defaults
+        self._read_only = read_only
+        self._check_mode = check_mode
 
-    @property
-    def _defaults(self):
-        return {
-            'database': 'keepass.ansible'
-        }
-
-    def _get(self, search):
+    @staticmethod
+    def _parse(term):
         pattern = "(get|put|post|del)(\\+(((?!:\\/\\/)[\\S])*))?(:\\/\\/(((?!#|\\?)[\\S])*))(\\?(((?!#)[\\s\\S])*)(#([\\s\\S]*))?)?"
-        matches = re.findall(pattern, search)
-        self._display.vv(u"Keepass: matches - %s}" % matches)
+        matches = re.findall(pattern, term)
 
-        query = {
-            'verb': matches[0][0],
-            'database': matches[0][2] or self.defaults["database"],
+        return {
+            'action': matches[0][0],
+            'database_path': matches[0][2] or None,
             'path': matches[0][5],
             'property': matches[0][8] or None,
-            'default_value': matches[0][11] or None,
-            'default_value_is_provided': matches[0][11] != ""
+            'value': matches[0][11] or None,
+            'value_is_provided': matches[0][11] != ""
         }
 
-        if not query["verb"]:
-            raise AttributeError(u"'Invalid query - no verb")
-        if not query["path"]:
-            raise AttributeError(u"'Invalid query - no path")
-        if query["verb"] == "del" and query["default_value"] is not None:
-            raise AttributeError(u"'Invalid query - cannot provide default/new value")
-        if query["verb"] in ["put", "post"]:
-            if query["property"] is not None:
-                raise AttributeError(u"'Invalid query - cannot provide value for property")
-            if query["default_value"] is None:
-                raise AttributeError(u"'Invalid query - need to provide insert/update value")
+    @staticmethod
+    def _validate(database, query, read_only):
+        if database is None or not isinstance(database, type({})):
+            raise AttributeError(u"Invalid query - no database details")
+        if query.get("action", "") == "":
+            raise AttributeError(u"Invalid query - no action")
+        if read_only and query["action"] != "get":
+            raise AttributeError(u"Invalid query - incorrect action (should be 'get')")
+        if query.get("path", "") == "":
+            raise AttributeError(u"Invalid query - no path")
+        if query["action"] == "del" and query("value", None) is not None:
+            raise AttributeError(u"Invalid query - cannot provide default/new value")
+        if query["action"] in ["put", "post"]:
+            if query("property", None) is not None:
+                raise AttributeError(u"Invalid query - cannot provide value for property")
+            if query("value", None) is None:
+                raise AttributeError(u"Invalid query - need to provide insert/update value")
 
-        return query
-
-    def execute(self, storage, term, variables, read_only=True, check_mode=False):
-        result = {'success': True, 'changed': False, 'stdout': {}, 'stderr': {}}
+    def execute(self, search):
+        result = {
+            'success': True,
+            'changed': False,
+            'term':  search.get("term", None),
+            'query': search.get("query", None),
+            'stdout': {},
+            'stderr': {}
+        }
 
         try:
-            result["query"] = self._get(term)
+            if result["query"] is None:     # NB: called from lookup plugin
+                result["query"] = self._parse(result["term"])
+                search["database"] = jmespath.search(result["query"]["database_path"], search["variables"])
+
+            Query._validate(search["database"], result["query"], self._read_only)
             self._display.v(u"Keepass: query - %s}" % result["query"])
 
-            if read_only and result["query"]["verb"] != "get":
-                raise AttributeError(u"'Invalid query - incorrect verb (should be 'get') - '%s'" % result["query"]["verb"])
+            execute_action = getattr(self._storage, result["query"]["action"])
+            result["stdout"] = execute_action(search["database"], result["query"], self._check_mode)
+            result["changed"] = result["query"]["action"] != "get"
 
-            execute = getattr(storage, result["query"]["verb"])
-            result["stdout"] = execute(jmespath.search(result["query"]["database"], variables), result["query"], check_mode)
-            result["changed"] = result["query"]["verb"] != "get"
-
-            return result
         except Exception as error:
             result["success"] = False
             result["stderr"] = {
-                'term': term,
                 'traceback': traceback.format_exc(),
                 'error': to_native(error)
             }
-            return result
+
+        return result

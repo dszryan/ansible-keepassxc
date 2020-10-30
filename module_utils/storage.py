@@ -76,12 +76,12 @@ class Storage(object):
         database.save()
         self._display.v(u"Keepass: database saved - %s" % query)
 
-    def _find(self, database_details, query, uuid_id=None, not_found_throw=True):
+    def _find(self, database_details, query, ref_uuid=None, not_found_throw=True):
         database = database_details if isinstance(database_details, type(PyKeePass)) == str else self._open(database_details, query)
-        entry = database.find_entries_by_path(query["path"], first=True) if uuid_id is None else database.find_entries_by_uuid(uuid_id, first=True)
+        entry = database.find_entries_by_path(query["path"], first=True) if ref_uuid is None else database.find_entries_by_uuid(ref_uuid, first=True)
         if not_found_throw and entry is None:
             raise AnsibleError(u"Entry is not found")
-        self._display.vv(u"KeePass: entry%s found - %s" % ("" if uuid is None else " (and its reference)", query))
+        self._display.vv(u"KeePass: entry%s found - %s" % ("" if ref_uuid is None else " (and its reference)", query))
         return entry, database
 
     def _entry_upsert(self, must_not_exists, database_details, query, check_mode):
@@ -89,7 +89,7 @@ class Storage(object):
         if must_not_exists and entry is not None:
             raise AttributeError(u"Invalid query - cannot post/insert when entry exists")
 
-        json_payload = json.load(query["default_value"])
+        json_payload = json.load(query["value"])
         path_split = (entry.path if entry is not None else query["path"]).rsplit('/', 1)
         title = path_split if len(path_split) == 1 else path_split[1]
         group = "" if len(path_split) == 1 else path_split[0]
@@ -150,16 +150,16 @@ class Storage(object):
         result = getattr(entry, query["property"], None) or \
             entry.custom_properties.get(query["property"], None) or \
             ([attachment for index, attachment in enumerate(entry.attachments) if attachment.filename == query["property"]] or [None])[0] or \
-            (None if check_mode else query["default_value"])
+            (None if check_mode else query["value"])
 
         # get reference value
         if query["property"] in ['title', 'username', 'password', 'url', 'notes', 'uuid']:
             if hasattr(result, 'startswith') and result.startswith('{REF:'):
                 entry, database = self._find(database, query, uuid.UUID(result.split(":")[2].strip('}')))
-                result = getattr(entry, query["property"], (None if check_mode else query["default_value"]))
+                result = getattr(entry, query["property"], (None if check_mode else query["value"]))
 
         # return result
-        if result is not None or (query["default_value_is_provided"] and not check_mode):
+        if result is not None or (query["value_is_provided"] and not check_mode):
             self._display.vv(u"KeePass: found property/file on entry - %s" % query)
             return base64.b64encode(result.binary) if hasattr(result, 'binary') else result
 

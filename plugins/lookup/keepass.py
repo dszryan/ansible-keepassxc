@@ -22,12 +22,11 @@ class Helper:
 class LookupModule(LookupBase):
     def run(self, terms, variables=None, **kwargs):
         storage = Helper.import_util("storage", "Storage", display)
-        query = Helper.import_util("query", "Query", display)
+        query = Helper.import_util("query", "Query", storage, display, True, False)
 
         results = []
         for term in terms:
-            results.append(query.execute(storage, term, variables))
-
+            results.append(query.execute(search={"term": term, "variables": variables}))
         return results
 
 
