@@ -5,7 +5,6 @@ __metaclass__ = type
 import re
 import traceback
 
-import jmespath
 from ansible.module_utils.common.text.converters import to_native
 
 
@@ -17,22 +16,22 @@ class Query(object):
         self._check_mode = check_mode
 
     @staticmethod
-    def _parse(term):
-        pattern = "(get|put|post|del)(\\+(((?!:\\/\\/)[\\S])*))?(:\\/\\/(((?!#|\\?)[\\S])*))(\\?(((?!#)[\\s\\S])*)(#([\\s\\S]*))?)?"
+    def _parse(term, display):
+        pattern = "(get|put|post|del):\\/\\/([\\w/]*)(\\?([\\w]*))?(#(.*))?"
         matches = re.findall(pattern, term)
+        display.vv(u"Keepass: matches - [%s]" % matches)
 
         return {
-            'action': matches[0][0],
-            'database_path': matches[0][2] or None,
-            'path': matches[0][5],
-            'property': matches[0][8] or None,
-            'value': matches[0][11] or None,
-            'value_is_provided': matches[0][11] != ""
+            "action": matches[0][0],
+            "path": matches[0][1],
+            "property": matches[0][3] or None,
+            "value": matches[0][5] or None,
+            "value_is_provided": matches[0][5] != ""
         }
 
     @staticmethod
-    def _validate(database, query, read_only):
-        if database is None or not isinstance(database, type({})):
+    def _validate(database_details, query, read_only):
+        if database_details is None or not isinstance(database_details, type({})):
             raise AttributeError(u"Invalid query - no database details")
         if query.get("action", "") == "":
             raise AttributeError(u"Invalid query - no action")
@@ -48,33 +47,32 @@ class Query(object):
             if query("value", None) is None:
                 raise AttributeError(u"Invalid query - need to provide insert/update value")
 
-    def execute(self, search):
+    def execute(self, database_details, query):
         result = {
-            'success': True,
-            'changed': False,
-            'term':  search.get("term", None),
-            'query': search.get("query", None),
-            'stdout': {},
-            'stderr': {}
+            "success": True,
+            "changed": False,
+            "query": query,
+            "stdout": {},
+            "stderr": {}
         }
 
         try:
-            if result["query"] is None:     # NB: called from lookup plugin
-                result["query"] = self._parse(result["term"])
-                search["database"] = jmespath.search(result["query"]["database_path"], search["variables"])
+            if not isinstance(query, type({})):
+                self._display.v(u"Keepass: term - %s" % query)
+                result["query"] = self._parse(query, self._display)
 
-            Query._validate(search["database"], result["query"], self._read_only)
-            self._display.v(u"Keepass: query - %s}" % result["query"])
+            Query._validate(database_details, result["query"], self._read_only)
+            self._display.v(u"Keepass: query - %s" % result["query"])
 
             execute_action = getattr(self._storage, result["query"]["action"])
-            result["stdout"] = execute_action(search["database"], result["query"], self._check_mode)
+            result["stdout"] = execute_action(database_details, result["query"], self._check_mode)
             result["changed"] = result["query"]["action"] != "get"
 
         except Exception as error:
             result["success"] = False
             result["stderr"] = {
-                'traceback': traceback.format_exc(),
-                'error': to_native(error)
+                "traceback": traceback.format_exc(),
+                "error": to_native(error)
             }
 
         return result

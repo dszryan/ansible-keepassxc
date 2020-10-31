@@ -18,28 +18,6 @@ class Storage(object):
         self._databases = {}
 
     @staticmethod
-    def _get_location(database_details):
-        return os.path.abspath(os.path.expanduser(os.path.expandvars(database_details.get("location"))))
-
-    @staticmethod
-    def _entry_dump(entry):
-        return {
-            "title": getattr(entry, 'title', None),
-            "username": getattr(entry, 'username', None),
-            "password": getattr(entry, 'password', None),
-            "url": getattr(entry, 'url', None),
-            "notes": getattr(entry, 'notes', None),
-            "custom_properties": getattr(entry, 'custom_properties', None),
-            "attachments": [
-                               {
-                                   "filename": attachment.filename,
-                                   "length": len(attachment.binary)
-                               }
-                               for index, attachment in enumerate(entry.attachments)
-                           ] or []
-        }
-
-    @staticmethod
     def _get_binary(possibly_base64_encoded):
         try:
             binary_stream = base64.b64decode(possibly_base64_encoded)
@@ -49,7 +27,7 @@ class Storage(object):
             return possibly_base64_encoded, False
 
     def _open(self, database_details, query):
-        database_location = Storage._get_location(database_details)
+        database_location = os.path.abspath(os.path.expanduser(os.path.expandvars(database_details.get("location"))))
         if self._databases.get(database_location) is None:
             # get database location
             if os.path.isfile(database_location):
@@ -76,7 +54,25 @@ class Storage(object):
         database.save()
         self._display.v(u"Keepass: database saved - %s" % query)
 
-    def _find(self, database_details, query, ref_uuid=None, not_found_throw=True):
+    @staticmethod
+    def _entry_dump(entry):
+        return {
+            "title": getattr(entry, "title", None),
+            "username": getattr(entry, "username", None),
+            "password": getattr(entry, "password", None),
+            "url": getattr(entry, "url", None),
+            "notes": getattr(entry, "notes", None),
+            "custom_properties": getattr(entry, "custom_properties", None),
+            "attachments": [
+                               {
+                                   "filename": attachment.filename,
+                                   "length": len(attachment.binary)
+                               }
+                               for index, attachment in enumerate(entry.attachments)
+                           ] or []
+        }
+
+    def _entry_find(self, database_details, query, ref_uuid=None, not_found_throw=True):
         database = database_details if isinstance(database_details, type(PyKeePass)) == str else self._open(database_details, query)
         entry = database.find_entries_by_path(query["path"], first=True) if ref_uuid is None else database.find_entries_by_uuid(ref_uuid, first=True)
         if not_found_throw and entry is None:
@@ -85,19 +81,19 @@ class Storage(object):
         return entry, database
 
     def _entry_upsert(self, must_not_exists, database_details, query, check_mode):
-        entry, database = self._find(database_details, query, not_found_throw=False)
+        entry, database = self._entry_find(database_details, query, not_found_throw=False)
         if must_not_exists and entry is not None:
             raise AttributeError(u"Invalid query - cannot post/insert when entry exists")
 
         json_payload = json.load(query["value"])
-        path_split = (entry.path if entry is not None else query["path"]).rsplit('/', 1)
+        path_split = (entry.path if entry is not None else query["path"]).rsplit("/", 1)
         title = path_split if len(path_split) == 1 else path_split[1]
         group = "" if len(path_split) == 1 else path_split[0]
 
         destination_group = database.find_groups(path=group, regex=False, first=True)
         if not check_mode and destination_group is None:
             previous_group = database.root_group()
-            for path in query["path"].split('/'):
+            for path in query["path"].split("/"):
                 group = database.find_groups(name=path, regex=False, first=True)
                 if group is None:
                     group = database.add_group(previous_group, path)
@@ -135,14 +131,14 @@ class Storage(object):
 
         if not check_mode:
             self._save(database, query)
-            return Storage._entry_dump(self._find(database, query, not_found_throw=(not check_mode))[0])
+            return Storage._entry_dump(self._entry_find(database, query, not_found_throw=(not check_mode))[0])
         elif entry is not None:
             return Storage._entry_dump(entry)
         else:
             return {}
 
     def get(self, database_details, query, check_mode=False):
-        entry, database = self._find(database_details, query)
+        entry, database = self._entry_find(database_details, query)
         if query["property"] is None:
             return Storage._entry_dump(entry)
 
@@ -153,15 +149,15 @@ class Storage(object):
             (None if check_mode else query["value"])
 
         # get reference value
-        if query["property"] in ['title', 'username', 'password', 'url', 'notes', 'uuid']:
-            if hasattr(result, 'startswith') and result.startswith('{REF:'):
-                entry, database = self._find(database, query, uuid.UUID(result.split(":")[2].strip('}')))
+        if query["property"] in ["title", "username", "password", "url", "notes", "uuid"]:
+            if hasattr(result, "startswith") and result.startswith("{REF:"):
+                entry, database = self._entry_find(database, query, uuid.UUID(result.split(":")[2].strip("}")))
                 result = getattr(entry, query["property"], (None if check_mode else query["value"]))
 
         # return result
         if result is not None or (query["value_is_provided"] and not check_mode):
             self._display.vv(u"KeePass: found property/file on entry - %s" % query)
-            return base64.b64encode(result.binary) if hasattr(result, 'binary') else result
+            return base64.b64encode(result.binary) if hasattr(result, "binary") else result
 
         # throw error, value not found
         raise AttributeError(u"No property/file found")
@@ -173,7 +169,7 @@ class Storage(object):
         return self._entry_upsert(False, database_details, query, check_mode)
 
     def delete(self, database_details, query, check_mode=False):
-        entry, database = self._find(database_details, query)
+        entry, database = self._entry_find(database_details, query)
         if query["property"] is None:
             database.delete_entry(entry) and not check_mode
         elif hasattr(entry, query["property"]):
