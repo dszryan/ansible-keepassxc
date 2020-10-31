@@ -5,15 +5,16 @@ __metaclass__ = type
 import re
 import traceback
 
+from ansible.errors import AnsibleParserError, AnsibleError
 from ansible.module_utils.common.text.converters import to_native
 
 
 class Query(object):
-    def __init__(self, storage, display, read_only=True, check_mode=False):
+    def __init__(self, storage, display, check_mode=False, fail_silently=True):
         self._storage = storage
         self._display = display
-        self._read_only = read_only
         self._check_mode = check_mode
+        self._fail_silently = fail_silently
 
     @staticmethod
     def _parse(term, display):
@@ -30,13 +31,13 @@ class Query(object):
         }
 
     @staticmethod
-    def _validate(database_details, query, read_only):
+    def _validate(database_details, query):
         if database_details is None or not isinstance(database_details, type({})):
             raise AttributeError(u"Invalid query - no database details")
         if query.get("action", "") == "":
             raise AttributeError(u"Invalid query - no action")
-        if read_only and query["action"] != "get":
-            raise AttributeError(u"Invalid query - incorrect action (should be 'get')")
+        if not database_details.get("updatable", False) and query["action"] != "get":
+            raise AttributeError(u"Invalid query - database is not 'updatable'")
         if query.get("path", "") == "":
             raise AttributeError(u"Invalid query - no path")
         if query["action"] == "del" and query("value", None) is not None:
@@ -61,7 +62,7 @@ class Query(object):
                 self._display.v(u"Keepass: term - %s" % query)
                 result["query"] = self._parse(query, self._display)
 
-            Query._validate(database_details, result["query"], self._read_only)
+            Query._validate(database_details, result["query"])
             self._display.v(u"Keepass: query - %s" % result["query"])
 
             execute_action = getattr(self._storage, result["query"]["action"])
@@ -74,5 +75,8 @@ class Query(object):
                 "traceback": traceback.format_exc(),
                 "error": to_native(error)
             }
+
+            if not self._fail_silently:
+                raise AnsibleParserError(AnsibleError(result))
 
         return result

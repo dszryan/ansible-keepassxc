@@ -20,25 +20,23 @@ options:
     description: urls to query
   database:
     description: 
-    type: str
-
-
+    type: template
+  fail_silently:
+    description: 
+    type: bool
+    default: true
 """
 
 
 class LookupModule(LookupBase):
     def run(self, terms, variables=None, **kwargs):
-        storage = Helper.import_util("storage", "Storage", display)
-        query = Helper.import_util("query", "Query", storage, display, True, False)
-
         self.set_options(var_options=variables, direct=kwargs)
+
+        storage = Helper.import_util("storage", "Storage", display)
+        query = Helper.import_util("query", "Query", storage, display, False, self.get_option("fail_silently"))
         database_details = self._templar.template(self.get_option("database"), fail_on_undefined=True)
 
-        results = []
-        for term in terms:
-            display.v(u"Keepass: TYPE - %s" % type(term))
-            results.append(query.execute(database_details, term))
-        return results
+        return list(map(lambda term: query.execute(database_details, term), terms))
 
 
 class Helper(object):
