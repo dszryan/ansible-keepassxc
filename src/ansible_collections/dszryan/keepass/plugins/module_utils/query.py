@@ -10,9 +10,9 @@ from ansible.module_utils.common.text.converters import to_native
 
 
 class Query(object):
-    def __init__(self, storage, display, check_mode=False, fail_silently=True):
-        self._storage = storage
+    def __init__(self, display, storage, check_mode=False, fail_silently=True):
         self._display = display
+        self._storage = storage
         self._check_mode = check_mode
         self._fail_silently = fail_silently
 
@@ -49,34 +49,35 @@ class Query(object):
                 raise AttributeError(u"Invalid query - need to provide insert/update value")
 
     def execute(self, database_details, query):
-        result = {
-            "success": True,
+        return_value = {
+            "failed": False,
             "changed": False,
-            "query": query,
-            "stdout": {},
-            "stderr": {}
+            "outcome": {
+                "query": query,
+                "result": {}
+            }
         }
 
         try:
             if not isinstance(query, type({})):
                 self._display.v(u"Keepass: term - %s" % query)
-                result["query"] = self._parse(query, self._display)
+                return_value["outcome"]["query"] = self._parse(query, self._display)
 
-            Query._validate(database_details, result["query"])
-            self._display.v(u"Keepass: query - %s" % result["query"])
+            Query._validate(database_details, return_value["outcome"]["query"])
+            self._display.v(u"Keepass: query - %s" % return_value["outcome"]["query"])
 
-            execute_action = getattr(self._storage, result["query"]["action"])
-            result["stdout"] = execute_action(database_details, result["query"], self._check_mode)
-            result["changed"] = result["query"]["action"] != "get"
+            execute_action = getattr(self._storage, return_value["outcome"]["query"]["action"])
+            return_value["outcome"]["result"] = execute_action(database_details, return_value["outcome"]["query"], self._check_mode)
+            return_value["changed"] = return_value["outcome"]["query"]["action"] != "get"       # also track modified time to get true changed value
 
         except Exception as error:
-            result["success"] = False
-            result["stderr"] = {
+            return_value["failed"] = True
+            return_value["outcome"]["result"] = {
                 "traceback": traceback.format_exc(),
                 "error": to_native(error)
             }
 
             if not self._fail_silently:
-                raise AnsibleParserError(AnsibleError(result))
+                raise AnsibleParserError(AnsibleError(return_value))
 
-        return result
+        return return_value
