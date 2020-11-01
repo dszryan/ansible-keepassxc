@@ -43,14 +43,12 @@ class Storage(object):
                 if os.path.isfile(database_keyfile):
                     self._display.vvv(u"Keepass: database keyfile - %s" % query)
 
-            self._databases[database_location] = \
-                PyKeePass(database_location, database_password, database_keyfile)
+            self._databases[database_location] = PyKeePass(database_location, database_password, database_keyfile)
 
         self._display.v(u"Keepass: database opened - %s" % query)
         return self._databases[database_location]
 
-    def _save(self, database_details, query):
-        database = database_details if isinstance(database_details, type(PyKeePass)) == str else self._open(database_details, query)
+    def _save(self, database, query):
         database.save()
         self._display.v(u"Keepass: database saved - %s" % query)
 
