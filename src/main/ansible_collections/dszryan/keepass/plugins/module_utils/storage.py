@@ -71,10 +71,14 @@ class Storage(object):
         }
 
     def _entry_find(self, database_details, query, ref_uuid=None, not_found_throw=True):
-        database = database_details if isinstance(database_details, type(PyKeePass)) == str else self._open(database_details, query)
+        database = database_details if isinstance(database_details, PyKeePass) else self._open(database_details, query)
         entry = database.find_entries_by_path(query["path"], first=True) if ref_uuid is None else database.find_entries_by_uuid(ref_uuid, first=True)
-        if not_found_throw and entry is None:
-            raise AnsibleError(u"Entry is not found")
+        if entry is None:
+            self._display.vv(u"KeePass: entry%s NOT found - %s" % ("" if ref_uuid is None else " (and its reference)", query))
+            if not_found_throw:
+                raise AnsibleError(u"Entry is not found")
+            else:
+                return None, database
         self._display.vv(u"KeePass: entry%s found - %s" % ("" if ref_uuid is None else " (and its reference)", query))
         return entry, database
 

@@ -6,6 +6,11 @@ __pycache__/
 collection/
 *.tar.gz
 
+*.kbdx
+*.keyfile
+!scratch.kbdx
+!scratch.keyfile
+
 # C extensions
 *.so
 
