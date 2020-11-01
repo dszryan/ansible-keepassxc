@@ -50,8 +50,8 @@ class Query(object):
 
     def execute(self, database_details, query):
         return_value = {
-            "failed": False,
             "changed": False,
+            "failed": False,
             "outcome": {
                 "query": query,
                 "result": {}
@@ -67,8 +67,8 @@ class Query(object):
             self._display.v(u"Keepass: query - %s" % return_value["outcome"]["query"])
 
             execute_action = getattr(self._storage, return_value["outcome"]["query"]["action"])
-            return_value["outcome"]["result"] = execute_action(database_details, return_value["outcome"]["query"], self._check_mode)
-            return_value["changed"] = return_value["outcome"]["query"]["action"] != "get"       # also track modified time to get true changed value
+            return_value["changed"], return_value["outcome"]["result"] = \
+                execute_action(database_details, return_value["outcome"]["query"], self._check_mode)
 
         except Exception as error:
             return_value["failed"] = True

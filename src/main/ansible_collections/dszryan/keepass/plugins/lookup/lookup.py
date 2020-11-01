@@ -12,8 +12,7 @@ DOCUMENTATION = """
 name: keepass
 author: develop <develop@local>
 short_description: 
-description:
-    - asdf
+description: 
 options:
   _terms:
     description: urls to query

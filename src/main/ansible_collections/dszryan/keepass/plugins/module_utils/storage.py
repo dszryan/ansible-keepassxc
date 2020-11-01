@@ -88,9 +88,10 @@ class Storage(object):
         json_payload = json.load(query["value"])
         path_split = (entry.path if entry is not None else query["path"]).rsplit("/", 1)
         title = path_split if len(path_split) == 1 else path_split[1]
-        group = "" if len(path_split) == 1 else path_split[0]
+        group_path = "/" if len(path_split) == 1 else path_split[0]
+        found_mtime = getattr(entry, "mtime", "")
 
-        destination_group = database.find_groups(path=group, regex=False, first=True)
+        destination_group = database.find_groups(path=group_path, regex=False, first=True)
         if not check_mode and destination_group is None:
             previous_group = database.root_group()
             for path in query["path"].split("/"):
@@ -131,16 +132,17 @@ class Storage(object):
 
         if not check_mode:
             self._save(database, query)
-            return Storage._entry_dump(self._entry_find(database, query, not_found_throw=(not check_mode))[0])
+            upsert_entity = Storage._entry_dump(self._entry_find(database, query)[0])
+            return (found_mtime == getattr(upsert_entity, "mtime", "")), upsert_entity
         elif entry is not None:
-            return Storage._entry_dump(entry)
+            return False, Storage._entry_dump(entry)
         else:
-            return {}
+            return False, {}
 
     def get(self, database_details, query, check_mode=False):
         entry, database = self._entry_find(database_details, query)
         if query["property"] is None:
-            return Storage._entry_dump(entry)
+            return False, Storage._entry_dump(entry)
 
         # get entry value
         result = getattr(entry, query["property"], None) or \
@@ -157,7 +159,7 @@ class Storage(object):
         # return result
         if result is not None or (query["value_is_provided"] and not check_mode):
             self._display.vv(u"KeePass: found property/file on entry - %s" % query)
-            return base64.b64encode(result.binary) if hasattr(result, "binary") else result
+            return False, base64.b64encode(result.binary) if hasattr(result, "binary") else result
 
         # throw error, value not found
         raise AttributeError(u"No property/file found")
@@ -179,10 +181,10 @@ class Storage(object):
         else:
             attachments = entry.find_attachments(filename=query["property"], regex=True)
             if attachments is None:
-                return False
+                return False, None
             elif not check_mode:
                 for attachment in attachments:
                     entry.delete_attachment(attachment)
 
         self._save(database, query) and not check_mode
-        return True
+        return True, None

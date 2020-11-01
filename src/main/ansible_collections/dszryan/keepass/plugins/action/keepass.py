@@ -2,25 +2,27 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.plugins import display
 from ansible.plugins.action import ActionBase
 from ansible_collections.dszryan.keepass.plugins.module_utils.storage import Storage
 from ansible_collections.dszryan.keepass.plugins.module_utils.query import Query
 
-DOCUMENTATION = """
-name: lookup
-author:
-version_added: "2.10"
-short_description:
-description:
-"""
-
 
 class ActionModule(ActionBase):
+
+    TRANSFERS_FILES = False
+    _VALID_ARGS = frozenset(("database", "term", "action", "path", "property", "default", "upsert", "check_mode", "fail_silently"))
+
+    _search_args = ["action", "path", "property", "default", "upsert"]
+
     def run(self, tmp=None, task_vars=None):
         super(ActionModule, self).run(tmp, task_vars)
         storage = Storage(display)
         query = Query(display, storage, self._task.args.get("check_mode", False), self._task.args.get("fail_silently", False))
+        if self._task.args.get("term", None) is not None and self._search_args in self._task.args.keys():
+            raise AnsibleParserError(AnsibleError(u"'term' is mutually exclusive with %s" % self._search_args))
+
         search = self._task.args["term"] if self._task.args.get("term", None) is not None else {
             "action": self._task.args.get("action", None),
             "path": self._task.args.get("path", None),
