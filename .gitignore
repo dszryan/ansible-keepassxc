@@ -8,8 +8,6 @@ collection/
 
 *.kbdx
 *.keyfile
-!scratch.kbdx
-!scratch.keyfile
 
 # C extensions
 *.so

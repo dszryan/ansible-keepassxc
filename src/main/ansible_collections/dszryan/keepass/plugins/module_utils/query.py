@@ -2,6 +2,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import json
 import re
 import traceback
 
@@ -18,17 +19,18 @@ class Query(object):
 
     @staticmethod
     def _parse(term, display):
-        pattern = "(get|put|post|del):\\/\\/([\\w/]*)(\\?([\\w]*))?(#(.*))?"
+        pattern = "(get|put|post|del):\\/\\/([\\w/]*)(\\?([\\s\\S]*))?(#([\\s\\S]*))?"
         matches = re.findall(pattern, term)
         display.vv(u"Keepass: matches - [%s]" % matches)
 
         return {
             "action": matches[0][0],
             "path": matches[0][1],
-            "property": matches[0][3] or None,
-            "value": matches[0][5] or None,
+            "property": (matches[0][3] if matches[0][3] != "" else None),
+            "value": (json.loads(matches[0][5]) if matches[0][5] != "" else None),
             "value_is_provided": matches[0][5] != ""
         }
+    # json.load(matches[0][5]) if matches[0][5] is not None else None,
 
     @staticmethod
     def _validate(database_details, query):
@@ -47,6 +49,8 @@ class Query(object):
                 raise AttributeError(u"Invalid query - cannot provide value for property")
             if query("value", None) is None:
                 raise AttributeError(u"Invalid query - need to provide insert/update value")
+            if query["value"].get("title", None) is not None:
+                raise AttributeError(u"Invalid query - title is already provided in path")
 
     def execute(self, database_details, query):
         return_value = {

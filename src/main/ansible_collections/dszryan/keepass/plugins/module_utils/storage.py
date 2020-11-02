@@ -4,7 +4,6 @@ __metaclass__ = type
 
 import base64
 import os
-import json
 import uuid
 
 from ansible.errors import AnsibleError
@@ -22,9 +21,10 @@ class Storage(object):
         try:
             binary_stream = base64.b64decode(possibly_base64_encoded)
             if base64.b64encode(binary_stream) == possibly_base64_encoded:
-                return binary_stream, True
+                return_value, was_encoded = binary_stream, True
         except Exception:
-            return possibly_base64_encoded, False
+            return_value, was_encoded = possibly_base64_encoded, False
+        return (str.encode(return_value) if isinstance(return_value, str) else return_value), was_encoded
 
     def _open(self, database_details, query):
         database_location = os.path.abspath(os.path.expanduser(os.path.expandvars(database_details.get("location"))))
@@ -61,13 +61,7 @@ class Storage(object):
             "url": getattr(entry, "url", None),
             "notes": getattr(entry, "notes", None),
             "custom_properties": getattr(entry, "custom_properties", None),
-            "attachments": [
-                               {
-                                   "filename": attachment.filename,
-                                   "length": len(attachment.binary)
-                               }
-                               for index, attachment in enumerate(entry.attachments)
-                           ] or []
+            "attachments": [{"filename": attachment.filename, "length": len(attachment.binary)} for index, attachment in enumerate(entry.attachments)] or []
         }
 
     def _entry_find(self, database_details, query, ref_uuid=None, not_found_throw=True):
@@ -87,55 +81,69 @@ class Storage(object):
         if must_not_exists and entry is not None:
             raise AttributeError(u"Invalid query - cannot post/insert when entry exists")
 
-        json_payload = json.load(query["value"])
         path_split = (entry.path if entry is not None else query["path"]).rsplit("/", 1)
         title = path_split if len(path_split) == 1 else path_split[1]
         group_path = "/" if len(path_split) == 1 else path_split[0]
-        found_mtime = getattr(entry, "mtime", "")
 
         destination_group = database.find_groups(path=group_path, regex=False, first=True)
         if not check_mode and destination_group is None:
-            previous_group = database.root_group()
-            for path in query["path"].split("/"):
-                group = database.find_groups(name=path, regex=False, first=True)
+            previous_group = database.root_group
+            for path in group_path.split("/"):
+                group = database.find_groups(name=(previous_group.path + path), regex=False, first=True)
                 if group is None:
                     group = database.add_group(previous_group, path)
                 previous_group = group
             destination_group = previous_group
 
+        query_value = dict(query["value"])
+        entry_is_created, entry_is_updated = (False, False)
         if not check_mode:
-            entry = database.add_entry(
-                destination_group=destination_group,
-                title=title,
-                username=getattr(json_payload, "username", ""),
-                password=getattr(json_payload, "password", ""),
-                url=getattr(json_payload, "url", None),
-                notes=getattr(json_payload, "notes", None),
-                expiry_time=getattr(json_payload, "expiry_time", None),
-                tags=getattr(json_payload, "tags", None),
-                force_creation=must_not_exists)
+            if entry is None:
+                entry = database.add_entry(
+                    destination_group=destination_group,
+                    title=title,
+                    username=query_value.get("username", ""),
+                    password=query_value.get("password", ""),
+                    url=query_value.get("url", None),
+                    notes=query_value.get("notes", None),
+                    expiry_time=query_value.get("expiry_time", None),
+                    tags=query_value.get("tags", None),
+                    force_creation=False)
+                list(map(lambda dict_key: query_value.pop(dict_key, None), ["username", "password", "url", "notes", "expiry_time", "tags"]))
+                entry_is_created = True
 
-        for key in ["title", "username", "password", "url", "notes", "expiry_time", "tags"]:
-            json_payload.pop(key, None)
+            for (key, value) in query_value.items():
+                if key == "attachments":
+                    if not (entry_is_updated or entry_is_created):
+                        entry.save_history()
+                    entry_attachments = entry.attachments
+                    for item in value:
+                        filename = item["filename"]
+                        binary, was_encoded = Storage._get_binary(item["binary"])
+                        entry_attachment_item = \
+                            ([attachment for index, attachment in enumerate(entry_attachments) if attachment.filename == filename] or [None])[0]
+                        if entry_attachment_item is None or entry_attachment_item.data != binary:
+                            if entry_attachment_item is not None:
+                                database.delete_binary(entry_attachment_item.id)
+                            entry.add_attachment(database.add_binary(binary), filename)
+                            entry_is_updated = True
+                elif hasattr(entry, key):
+                    if getattr(entry, key, None) != value or (key in ["username", "password"] and getattr(entry, key, "") != ("" if value is None else value)):
+                        if not (entry_is_updated or entry_is_created):
+                            entry.save_history()
+                        setattr(entry, key, value)
+                        entry_is_updated = True
+                elif key not in entry.custom_properties.keys() or entry.custom_properties.get(key, None) != value:
+                    if not (entry_is_updated or entry_is_created):
+                        entry.save_history()
+                    entry.set_custom_property(key, value)
+                    entry_is_updated = True
 
-        for key in json_payload.keys():
-            if key == "attachments":
-                attachments = json_payload[key]
-                next_id = len(entry.attachments)
-                for item in attachments:
-                    filename = item["filename"]
-                    binary = Storage._get_binary(item["binary"])
-                    if not check_mode:
-                        attachment = entry.add_attachment(next_id, filename)
-                        attachment.binary = binary
-                        next_id = next_id + 1
-            elif not check_mode:
-                entry.set_custom_property(key, json_payload[key])
-
-        if not check_mode:
+        if not check_mode and (entry_is_created or entry_is_updated):
+            if not entry_is_created:
+                entry.touch(True)
             self._save(database, query)
-            upsert_entity = Storage._entry_dump(self._entry_find(database, query)[0])
-            return (found_mtime == getattr(upsert_entity, "mtime", "")), upsert_entity
+            return True, Storage._entry_dump(self._entry_find(database, query)[0])
         elif entry is not None:
             return False, Storage._entry_dump(entry)
         else:
@@ -173,20 +181,19 @@ class Storage(object):
         return self._entry_upsert(False, database_details, query, check_mode)
 
     def delete(self, database_details, query, check_mode=False):
-        entry, database = self._entry_find(database_details, query)
+        entry, database = self._entry_find(database_details, query, not_found_throw=True)
         if query["property"] is None:
             database.delete_entry(entry) and not check_mode
         elif hasattr(entry, query["property"]):
-            setattr(entry, query["property"], None) and not check_mode
+            setattr(entry, query["property"], ("" if query["property"] in ["username", "password"] else None)) and not check_mode
         elif query["property"] in entry.custom_properties.keys():
             entry.delete_custom_property(query["property"]) and not check_mode
         else:
-            attachments = entry.find_attachments(filename=query["property"], regex=True)
-            if attachments is None:
-                return False, None
-            elif not check_mode:
-                for attachment in attachments:
-                    entry.delete_attachment(attachment)
+            attachment = ([attachment for index, attachment in enumerate(entry.attachments) if attachment.filename == query["property"]] or [None])[0]
+            if attachment is not None:
+                entry.delete_attachment(attachment) and not check_mode
+            else:
+                raise AttributeError(u"No property/file found")
 
         self._save(database, query) and not check_mode
-        return True, None
+        return True, (None if query["property"] is None else self._entry_dump(self._entry_find(database, query, not_found_throw=True)[0]))
