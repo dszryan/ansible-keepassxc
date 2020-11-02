@@ -174,7 +174,7 @@ class TestStorage(TestCase):
 
     def test__save_valid(self):
         storage = Storage(self._display)
-        database_details_save = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_save = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         self.test__open_valid_details(storage, database_details_save)
         storage._save(storage._databases[database_details_save["location"]], self._search_path_valid)
         self._display.assert_has_calls([
@@ -247,13 +247,13 @@ class TestStorage(TestCase):
 
     def test__entry_upsert_valid_must_not_exists_throw_error(self):
         storage = Storage(self._display)
-        database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         self.assertRaises(AttributeError, storage._entry_upsert, True, database_details_upsert, self._search_path_valid, False)
         self._display.assert_has_calls([])
 
     def test__entry_upsert_valid_upsert_custom_values(self):
         storage = Storage(self._display)
-        database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         has_changed, updated_entry = storage._entry_upsert(False, database_details_upsert, self._update_path_valid, False)
         self.assertTrue(has_changed)
         self.assertEqual(self._update_entry_value, updated_entry)
@@ -268,7 +268,7 @@ class TestStorage(TestCase):
 
     def test__entry_upsert_valid_noop(self):
         storage = Storage(self._display)
-        database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         has_changed, updated_entry = storage._entry_upsert(False, database_details_upsert, self._noop_path_valid, False)
         self.assertFalse(has_changed)
         self.assertEqual(self._database_entry, updated_entry)
@@ -281,7 +281,7 @@ class TestStorage(TestCase):
 
     def test__entry_insert_valid(self):
         storage = Storage(self._display)
-        database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         has_changed, updated_entry = storage._entry_upsert(False, database_details_upsert, self._insert_path_valid, False)
         self.assertTrue(has_changed)
         self.assertEqual(self._insert_entry_value, updated_entry)
@@ -371,7 +371,7 @@ class TestStorage(TestCase):
 
     def test_delete_valid_entry(self):
         storage = Storage(self._display)
-        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         has_changed, deleted_entry = storage.delete(database_details_delete, self._delete_entry, False)
         self.assertTrue(has_changed)
         self.assertEqual(None, deleted_entry)
@@ -385,7 +385,7 @@ class TestStorage(TestCase):
 
     def test_delete_valid_property(self):
         storage = Storage(self._display)
-        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         has_changed, deleted_entry = storage.delete(database_details_delete, self._delete_password, False)
         self.assertTrue(has_changed)
         self.assertDictEqual(dict(self._database_entry, password=""), deleted_entry)
@@ -400,7 +400,7 @@ class TestStorage(TestCase):
 
     def test_delete_valid_custom(self):
         storage = Storage(self._display)
-        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         has_changed, deleted_entry = storage.delete(database_details_delete, self._delete_custom, False)
         self.assertTrue(has_changed)
         self.assertDictEqual(dict(self._database_entry, custom_properties={}), deleted_entry)
@@ -415,7 +415,7 @@ class TestStorage(TestCase):
 
     def test_delete_valid_file(self):
         storage = Storage(self._display)
-        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         has_changed, deleted_entry = storage.delete(database_details_delete, self._delete_file, False)
         self.assertTrue(has_changed)
         self.assertDictEqual(dict(self._database_entry, attachments=[]), deleted_entry)
@@ -430,7 +430,7 @@ class TestStorage(TestCase):
 
     def test_delete_valid_clone(self):
         storage = Storage(self._display)
-        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         has_changed, deleted_entry = storage.delete(database_details_delete, self._delete_clone, False)
         self.assertTrue(has_changed)
         self.assertDictEqual(dict(self._database_entry, title="clone", username="{REF:U@I:9366B38F2EE9412FA6BAB2AB10D1F100}", password=""), deleted_entry)
@@ -445,7 +445,7 @@ class TestStorage(TestCase):
 
     def test_delete_valid_no_entry_exists(self):
         storage = Storage(self._display)
-        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         self.assertRaises(AnsibleError, storage.delete, database_details_delete, self._delete_invalid_entry, False)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % self._delete_invalid_entry),
@@ -456,7 +456,7 @@ class TestStorage(TestCase):
 
     def test_delete_valid_no_property_exists(self):
         storage = Storage(self._display)
-        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8)))
+        database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         self.assertRaises(AttributeError, storage.delete, database_details_delete, self._delete_invalid_property, False)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % self._delete_invalid_property),
