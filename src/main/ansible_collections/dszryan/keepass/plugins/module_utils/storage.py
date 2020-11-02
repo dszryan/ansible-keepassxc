@@ -114,8 +114,6 @@ class Storage(object):
 
             for (key, value) in query_value.items():
                 if key == "attachments":
-                    if not (entry_is_updated or entry_is_created):
-                        entry.save_history()
                     entry_attachments = entry.attachments
                     for item in value:
                         filename = item["filename"]
@@ -123,12 +121,14 @@ class Storage(object):
                         entry_attachment_item = \
                             ([attachment for index, attachment in enumerate(entry_attachments) if attachment.filename == filename] or [None])[0]
                         if entry_attachment_item is None or entry_attachment_item.data != binary:
+                            if not (entry_is_updated or entry_is_created):
+                                entry.save_history()
                             if entry_attachment_item is not None:
                                 database.delete_binary(entry_attachment_item.id)
                             entry.add_attachment(database.add_binary(binary), filename)
                             entry_is_updated = True
                 elif hasattr(entry, key):
-                    if getattr(entry, key, None) != value or (key in ["username", "password"] and getattr(entry, key, "") != ("" if value is None else value)):
+                    if getattr(entry, key, None) != value or (key in ["username", "password"] and getattr(entry, key, "") != ""):
                         if not (entry_is_updated or entry_is_created):
                             entry.save_history()
                         setattr(entry, key, value)
