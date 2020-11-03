@@ -1,5 +1,8 @@
 # ansible-keepassxc
 
+- ## purpose
+     read and write to a keepass/keepassxc file from within an ansible playbook
+
 - ## usage
 
   - ### requirements
@@ -34,7 +37,11 @@
       collections:
         - dszryan.keepass
       tasks:
-        - name: update scratch
+        - name: show values from readonly file
+          debug:
+            msg: "{{ lookup('dszryan.keepass.lookup', 'get://first_secret', 'get://second/secret', database=keepass.ansible, fail_silently=true) }}"
+
+        - name: update scratch file
           keepass:
             database: "{{ keepass.scratch }}"
             action: put
@@ -43,13 +50,11 @@
           register: register_keepass
         - name: debug
           debug:
-            msg: "{{ register_keepass }}"
-    
-        - name: debug
-          debug:
-            msg: "{{ lookup('dszryan.keepass.lookup', 'get://first_secret', 'get://second/secret', database=keepass.ansible, fail_silently=true) }}"
-    
+            msg: "{{ register_keepass }}"    
     ```
+
+- ## documentation
+  available in detail as part of the [module](https://github.com/dszryan/ansible-keepassxc/blob/main/src/main/ansible_collections/dszryan/keepass/plugins/action/keepass.py) definition
 
 - ## development
   - checkout to your local ansible project as submodule 
