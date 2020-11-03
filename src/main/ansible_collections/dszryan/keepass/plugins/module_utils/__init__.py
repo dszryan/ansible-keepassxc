@@ -2,6 +2,10 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import json
+from typing import Tuple
+
+from ansible.module_utils.common.text.converters import to_native
 from pykeepass.entry import Entry
 
 from ansible_collections.dszryan.keepass.plugins.module_utils.search import Search
@@ -19,14 +23,22 @@ class EntryDump(object):
         self.attachments = [{"filename": attachment.filename, "length": len(attachment.binary)} for index, attachment in enumerate(entry.attachments)] or []    # type: list
 
 
-class SearchResult(object):
-    def __init__(self, search: Search):
-        self.changed = False                    # type: bool
-        self.failed = False                     # type: bool
-        self.outcome = Outcome(search)          # type: Outcome
-
-
 class Outcome(object):
-    def __init__(self, search: Search):
-        self.search = search                    # type: Search
-        self.result = None                      # type: dict
+    def __init__(self, search_value: Search):
+        self.changed = False                                                # type: bool
+        self.failed = False                                                 # type: bool
+        self.outcome = {"search": search_value.__dict__, "result": None}    # type: dict
+
+    def success(self, outcome: Tuple[bool, dict]):
+        self.changed = outcome[0]
+        self.outcome["result"] = outcome[1]
+
+    def failure(self, outcome: Tuple[str, Exception]):
+        self.failed = True
+        self.outcome["result"] = {
+            "trace": outcome[0],
+            "error": to_native(outcome[1])
+        }
+
+    def __str__(self) -> str:
+        return json.dumps(self.__dict__)

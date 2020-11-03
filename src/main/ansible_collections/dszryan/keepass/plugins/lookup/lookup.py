@@ -10,64 +10,50 @@ from ansible_collections.dszryan.keepass.plugins.module_utils.query import Query
 
 DOCUMENTATION = """
 module: lookup
+author: 
+  - develop <develop@local>
 short_description: integrates with keepass/keepassxc
-description:e
+description:
   - provides integration with keepass to read/write entries
 version_added: "2.4"
-author:
-  - develop <develop@local>
 options:
-  database:
-    description:
-      - templated value that would return the following structure
-      - for the sample below, the value would be: {{ parent_name.read_only_database }} or {{ parent_name.updatable_database }}
-      # ---
-        parent_name:
-          read_only_database:
-            location: path of the database
-            password: !vault |
-                $ANSIBLE_VAULT;1.1;AES256 ...
-            keyfile: path to the keyfile
-            transformed_key:
-            updatable: false    # this is the default value when not provided and and would only support I(action=get)
-          updatable_database:
-            location: path of the database
-            password: !vault |
-                $ANSIBLE_VAULT;1.1;AES256 ...
-            keyfile: path to the keyfile
-            transformed_key:
-            updatable: true    # when explicitly provided as true, the database would support I(action=post), I(action=put) amd I(action=del)
-    type: dict
   _terms:
     description:
       - provided in the format '{{ action }}://{{ path }}?{{ field }}#{{ value }}'
       - for the rules governing read the respective descriptions I(action), I(path), I(field) and I(value) in M(keepass)
+    required: True
     type: list
-    required: true
+    version_added: "1.0"
+  database:
+    description:
+      - templated value that would location a dictionary value defining the keepass database
+    type: dict
+    required: True
     version_added: "1.0"
   check_mode:
     description:
       - ensures all operation do not affect the database
       - If I(action=post) or I(action=put) or I(action=del), operations are performed mocked and not changes are made to the database.
       - If I(action=get), I(value) is ignored and an exception is raised if the field is none or empty.
-    default: false
-    choices:
-      - false
-      - true
+    default: False
     type: bool
-    version_added: "1.0"
+    choices:
+      - False
+      - True
   fail_silently:
     description:
       - when true, exception raised are muted and returned as part of the result.
       - when false, an exception raised will halt any further executions
-    default: false
-    choices:
-      - false
-      - true
+    default: True
     type: bool
-    version_added: "1.0"
+    choices:
+      - False
+      - True
 requirements:
   - pykeepass = "*"
+notes:
+  - the lookup will only permit get/read operations
+  - to make changes to the keepass database use the action module instead
 """
 
 EXAMPLES = """
@@ -112,9 +98,8 @@ outcome:
 class LookupModule(LookupBase):
     def run(self, terms, variables=None, **kwargs):
         self.set_options(var_options=variables, direct=kwargs)
-        storage = KeepassDatabase(display, self.get_option("database"))
-        check_mode = self._task.args.get("check_mode", False)
-        fail_silently = self._task.args.get("fail_silently", True)
+        check_mode = self.get_option("check_mode")
+        fail_silently = self.get_option("fail_silently")
         storage = KeepassDatabase(display, self.get_option("database"))
 
         return list(map(lambda term: storage.execute(Query(term).search, check_mode=check_mode, fail_silently=fail_silently), terms))
