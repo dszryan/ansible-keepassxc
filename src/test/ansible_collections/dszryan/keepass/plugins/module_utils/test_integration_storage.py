@@ -13,10 +13,11 @@ from ansible.errors import AnsibleError, AnsibleParserError
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
-from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
+from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase, EntryDump
 from ansible_collections.dszryan.keepass.plugins.module_utils.query import Query
 
 
+# noinspection DuplicatedCode
 class TestStorage(TestCase):
 
     @classmethod
@@ -63,7 +64,6 @@ class TestStorage(TestCase):
             ]
         }
 
-        from ansible.plugins import display
         self._query_password = Query("get://one/two/test?password")
         self._query_custom = Query("get://one/two/test?test_custom_key")
         self._query_file = Query("get://one/two/test?scratch.keyfile")
@@ -132,9 +132,9 @@ class TestStorage(TestCase):
         self.assertEqual((message, True), actual)
 
     def test__get_binary_plain_text(self):
-        message = "hello world"
+        message = "hello world".encode("utf16")
         actual = KeepassDatabase(self._display, self._database_details_valid)._get_binary(message)
-        self.assertEqual((str.encode(message), False), actual)
+        self.assertEqual((bytes(message), False), actual)
 
     def test__open_valid_details(self):
         storage = KeepassDatabase(self._display, self._database_details_valid)
@@ -183,7 +183,7 @@ class TestStorage(TestCase):
     def test__entry_find_valid_by_path(self):
         storage = KeepassDatabase(self._display, self._database_details_valid)
         actual_entry = storage._entry_find(self._search_path_valid.search, ref_uuid=None, not_found_throw=True)
-        self.assertDictEqual(self._database_entry, storage._entry_dump(actual_entry))
+        self.assertDictEqual(self._database_entry, EntryDump(actual_entry).__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % self._database_details_valid["location"]),
             call.vvv("Keepass: keyfile found - %s" % self._database_details_valid["keyfile"]),
@@ -194,7 +194,7 @@ class TestStorage(TestCase):
     def test__entry_find_valid_by_uuid(self):
         storage = KeepassDatabase(self._display, self._database_details_valid)
         actual_entry = storage._entry_find(self._search_path_valid.search, ref_uuid=self._database_entry_uuid_valid, not_found_throw=True)
-        self.assertEqual(self._database_entry, storage._entry_dump(actual_entry))
+        self.assertEqual(self._database_entry, EntryDump(actual_entry).__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % self._database_details_valid["location"]),
             call.vvv("Keepass: keyfile found - %s" % self._database_details_valid["keyfile"]),
@@ -244,7 +244,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_upsert)
         has_changed, updated_entry = storage._entry_upsert(self._update_path_valid.search, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(self._update_entry_value, updated_entry)
+        self.assertDictEqual(self._update_entry_value, updated_entry.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
@@ -259,7 +259,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_upsert)
         has_changed, updated_entry = storage._entry_upsert(self._noop_path_valid.search, check_mode=False)
         self.assertFalse(has_changed)
-        self.assertDictEqual(self._clone_entry, updated_entry)
+        self.assertDictEqual(self._clone_entry, updated_entry.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
@@ -272,7 +272,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_upsert)
         has_changed, updated_entry = storage._entry_upsert(self._insert_path_valid.search, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(self._insert_entry_value, updated_entry)
+        self.assertDictEqual(self._insert_entry_value, updated_entry.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
@@ -286,7 +286,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, self._database_details_valid)
         has_changed, actual_entry = storage.get(self._search_path_valid.search, check_mode=False)
         self.assertFalse(has_changed)
-        self.assertDictEqual(self._database_entry, actual_entry)
+        self.assertDictEqual(self._database_entry, actual_entry.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % self._database_details_valid["location"]),
             call.vvv("Keepass: keyfile found - %s" % self._database_details_valid["keyfile"]),
@@ -376,7 +376,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete)
         has_changed, deleted_entry = storage.delete(self._delete_password.search, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._database_entry, password=""), deleted_entry)
+        self.assertDictEqual(dict(self._database_entry, password=""), deleted_entry.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_delete["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_delete["keyfile"]),
@@ -391,7 +391,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete)
         has_changed, deleted_entry = storage.delete(self._delete_custom.search, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._database_entry, custom_properties={}), deleted_entry)
+        self.assertDictEqual(dict(self._database_entry, custom_properties={}), deleted_entry.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_delete["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_delete["keyfile"]),
@@ -406,7 +406,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete)
         has_changed, deleted_entry = storage.delete(self._delete_file.search, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._database_entry, attachments=[]), deleted_entry)
+        self.assertDictEqual(dict(self._database_entry, attachments=[]), deleted_entry.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_delete["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_delete["keyfile"]),
@@ -421,7 +421,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete)
         has_changed, deleted_entry = storage.delete(self._delete_clone.search, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._clone_entry, password=""), deleted_entry)
+        self.assertDictEqual(dict(self._clone_entry, password=""), deleted_entry.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_delete["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_delete["keyfile"]),
@@ -456,10 +456,10 @@ class TestStorage(TestCase):
     def test_execute_valid_get(self):
         storage = KeepassDatabase(self._display, self._database_details_valid)
         actual = storage.execute(self._search_path_valid.search, check_mode=False, fail_silently=True)
-        self.assertFalse(actual["changed"])
-        self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._search_path_valid.search.__dict__, json.loads(actual["outcome"]["search"]))
-        self.assertDictEqual(self._database_entry, actual["outcome"]["result"])
+        self.assertFalse(actual.changed)
+        self.assertFalse(actual.failed)
+        self.assertDictEqual(self._search_path_valid.search.__dict__, actual.outcome.search.__dict__)
+        self.assertDictEqual(self._database_entry, actual.outcome.result.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % self._database_details_valid["location"]),
             call.vvv("Keepass: keyfile found - %s" % self._database_details_valid["keyfile"]),
@@ -471,10 +471,10 @@ class TestStorage(TestCase):
         database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_upsert)
         actual = storage.execute(self._insert_path_valid.search, check_mode=False, fail_silently=True)
-        self.assertTrue(actual["changed"])
-        self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._insert_path_valid.search.__dict__, json.loads(actual["outcome"]["search"]))
-        self.assertDictEqual(self._insert_entry_value, actual["outcome"]["result"])
+        self.assertTrue(actual.changed)
+        self.assertFalse(actual.failed)
+        self.assertDictEqual(self._insert_path_valid.search.__dict__, actual.outcome.search.__dict__)
+        self.assertDictEqual(self._insert_entry_value, actual.outcome.result.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
@@ -488,10 +488,10 @@ class TestStorage(TestCase):
         database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_upsert)
         actual = storage.execute(self._update_path_valid.search, check_mode=False, fail_silently=True)
-        self.assertTrue(actual["changed"])
-        self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._update_path_valid.search.__dict__, json.loads(actual["outcome"]["search"]))
-        self.assertDictEqual(self._update_entry_value, actual["outcome"]["result"])
+        self.assertTrue(actual.changed)
+        self.assertFalse(actual.failed)
+        self.assertDictEqual(self._update_path_valid.search.__dict__, actual.outcome.search.__dict__)
+        self.assertDictEqual(self._update_entry_value, actual.outcome.result.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
@@ -505,10 +505,10 @@ class TestStorage(TestCase):
         database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_upsert)
         actual = storage.execute(self._noop_path_valid.search, check_mode=False, fail_silently=False)
-        self.assertFalse(actual["changed"])
-        self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._noop_path_valid.search.__dict__, json.loads(actual["outcome"]["search"]))
-        self.assertDictEqual(self._clone_entry, actual["outcome"]["result"])
+        self.assertFalse(actual.changed)
+        self.assertFalse(actual.failed)
+        self.assertDictEqual(self._noop_path_valid.search.__dict__, actual.outcome.search.__dict__)
+        self.assertDictEqual(self._clone_entry, actual.outcome.result.__dict__)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
@@ -520,10 +520,10 @@ class TestStorage(TestCase):
         database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_delete)
         actual = storage.execute(self._delete_entry.search, check_mode=False, fail_silently=False)
-        self.assertTrue(actual["changed"])
-        self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._delete_entry.search.__dict__, json.loads(actual["outcome"]["search"]))
-        self.assertEqual(None, actual["outcome"]["result"])
+        self.assertTrue(actual.changed)
+        self.assertFalse(actual.failed)
+        self.assertDictEqual(self._delete_entry.search.__dict__, actual.outcome.search.__dict__)
+        self.assertEqual(None, actual.outcome.result)
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_delete["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_delete["keyfile"]),
@@ -536,10 +536,10 @@ class TestStorage(TestCase):
         database_details_delete = dict(self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16))), updatable=False)
         storage = KeepassDatabase(self._display, database_details_delete)
         actual = storage.execute(self._delete_entry.search, check_mode=False, fail_silently=True)
-        self.assertFalse(actual["changed"])
-        self.assertTrue(actual["failed"])
-        self.assertDictEqual(self._delete_entry.search.__dict__, json.loads(actual["outcome"]["search"]))
-        self.assertTrue("Invalid query - database is not 'updatable'" in (actual["outcome"]["result"]["error"]))
+        self.assertFalse(actual.changed)
+        self.assertTrue(actual.failed)
+        self.assertDictEqual(self._delete_entry.search.__dict__, actual.outcome.search.__dict__)
+        self.assertTrue("Invalid query - database is not 'updatable'" in (actual.outcome.result["error"]))
         self._display.assert_has_calls([])
 
     def test_execute_invalid_not_updatable_not_silently_throw(self):

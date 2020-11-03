@@ -15,10 +15,10 @@ class Query(object):
     _PATTERN = u"(get|put|post|del)?:\\/\\/(((?![#\\?])[\\s\\S])*)(\\?(((?!#)[\\s\\S])*))?(#(.*))?"
 
     def __init__(self, term):
-        self.term = term
+        self.term = term    # type: str
 
     @property
-    def search(self):
+    def search(self) -> Search:
         try:
             find_all = re.findall(Query._PATTERN, self.term)
             if len(find_all) != 1 or len(find_all[0]) != 8:
@@ -35,5 +35,5 @@ class Query(object):
         except AttributeError as error:
             raise AnsibleParserError(AnsibleError(message=to_native(error), orig_exc=error))
 
-    def __str__(self):
+    def __str__(self) -> str:
         return json.dumps(self.__dict__)

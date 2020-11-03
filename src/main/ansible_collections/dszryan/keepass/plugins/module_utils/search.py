@@ -9,12 +9,12 @@ from ansible.module_utils.common.text.converters import to_native
 
 
 class Search(object):
-    def __init__(self, action: str, path: str, field: str, value: {}, value_was_provided: bool):
-        self.action = action
-        self.path = path
-        self.field = field
-        self.value = value
-        self.value_was_provided = value_was_provided
+    def __init__(self, action: str, path: str, field: str, value: dict, value_was_provided: bool):
+        self.action = action                            # type: str
+        self.path = path                                # type: str
+        self.field = field                              # type: str
+        self.value = value                              # type: dict
+        self.value_was_provided = value_was_provided    # type: bool
         self._validate()
 
     def _validate(self):
@@ -37,5 +37,5 @@ class Search(object):
         except AttributeError as error:
             raise AnsibleParserError(AnsibleError(message=to_native(error), orig_exc=error))
 
-    def __str__(self):
+    def __str__(self) -> str:
         return json.dumps(self.__dict__)
