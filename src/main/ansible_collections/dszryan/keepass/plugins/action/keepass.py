@@ -5,30 +5,29 @@ __metaclass__ = type
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.plugins import display
 from ansible.plugins.action import ActionBase
-from ansible_collections.dszryan.keepass.plugins.module_utils.storage import Storage
+
+from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
+from ansible_collections.dszryan.keepass.plugins.module_utils.search import Search
 from ansible_collections.dszryan.keepass.plugins.module_utils.query import Query
 
 
 class ActionModule(ActionBase):
 
     TRANSFERS_FILES = False
-    _VALID_ARGS = frozenset(("database", "term", "action", "path", "property", "default", "upsert", "check_mode", "fail_silently"))
-
-    _search_args = ["action", "path", "property", "default", "upsert"]
+    _VALID_ARGS = frozenset(("database", "term", "action", "path", "field", "value", "check_mode", "fail_silently"))
+    _search_args = ["action", "path", "field", "value"]
 
     def run(self, tmp=None, task_vars=None):
         super(ActionModule, self).run(tmp, task_vars)
-        storage = Storage(display)
-        query = Query(display, storage, self._task.args.get("check_mode", False), self._task.args.get("fail_silently", False))
-        if self._task.args.get("term", None) is not None and self._search_args in self._task.args.keys():
+        if self._task.args.get("term", None) is not None and len(set(self._search_args).intersection(set(self._task.args.keys()))) > 0:
             raise AnsibleParserError(AnsibleError(u"'term' is mutually exclusive with %s" % self._search_args))
 
-        search = self._task.args["term"] if self._task.args.get("term", None) is not None else {
-            "action": self._task.args.get("action", None),
-            "path": self._task.args.get("path", None),
-            "property": self._task.args.get("property", None) or None,
-            "value": (self._task.args.get("default", None) if self._task.args.get("action", None) == "get" else self._task.args.get("upsert", None)) or None,
-            "value_is_provided": (self._task.args.get("default", None) if self._task.args.get("action", None) == "get" else self._task.args.get("upsert", None)) is not None
-        }
+        search = Query(self._task.args["term"]).search if self._task.args.get("term", None) is not None else \
+            Search(action=self._task.args.get("action", None),
+                   path=self._task.args.get("path", None),
+                   field=self._task.args.get("field", None),
+                   value=self._task.args.get("value", None),
+                   value_was_provided=self._task.args.get("value", None) is not None)
 
-        return query.execute(self._task.args.get("database", None), search)
+        return KeepassDatabase(display, self._task.args.get("database", None)).\
+            execute(search, self._task.args.get("check_mode", False), self._task.args.get("fail_silently", False))
