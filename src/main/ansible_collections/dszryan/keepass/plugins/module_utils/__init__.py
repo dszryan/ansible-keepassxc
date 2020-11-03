@@ -20,13 +20,13 @@ class EntryDump(object):
 
 
 class SearchResult(object):
-    def __init__(self, search_value: Search):
+    def __init__(self, search: Search):
         self.changed = False                    # type: bool
         self.failed = False                     # type: bool
-        self.outcome = Outcome(search_value)    # type: Outcome
+        self.outcome = Outcome(search)          # type: Outcome
 
 
 class Outcome(object):
-    def __init__(self, search_value: Search):
-        self.search = search_value              # type: Search
+    def __init__(self, search: Search):
+        self.search = search                    # type: Search
         self.result = None                      # type: dict
