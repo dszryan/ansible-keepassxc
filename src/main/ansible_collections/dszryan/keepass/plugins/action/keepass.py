@@ -136,8 +136,8 @@ EXAMPLES = """
 """
 
 RETURN = """
-outcome:
-  description: the outcome of the query execution
+result:
+  description: the result of the query execution
   type: complex
   contains:
     search:
@@ -155,11 +155,13 @@ class ActionModule(ActionBase):
 
     def run(self, tmp=None, task_vars=None):
         super(ActionModule, self).run(tmp, task_vars)
+        display.vvv("keepass: args - %s" % list(({key: value} for key, value in self._task.args.items() if key != "database")))
         if self._task.args.get("term", None) is not None and len(set(self._search_args).intersection(set(self._task.args.keys()))) > 0:
             raise AnsibleParserError(AnsibleError(u"'term' is mutually exclusive with %s" % self._search_args))
 
-        search = Query(self._task.args["term"]).search if self._task.args.get("term", None) is not None else \
-            Search(action=self._task.args.get("action", None),
+        search = Query(display, self._task.args["term"]).search if self._task.args.get("term", None) is not None else \
+            Search(display=display,
+                   action=self._task.args.get("action", None),
                    path=self._task.args.get("path", None),
                    field=self._task.args.get("field", None),
                    value=self._task.args.get("value", None),

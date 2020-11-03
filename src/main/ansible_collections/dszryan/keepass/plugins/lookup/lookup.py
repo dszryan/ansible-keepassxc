@@ -84,8 +84,8 @@ EXAMPLES = """
 """
 
 RETURN = """
-outcome:
-  description: the outcome of the query execution
+result:
+  description: the result of the query execution
   type: complex
   contains:
     search:
@@ -102,4 +102,5 @@ class LookupModule(LookupBase):
         fail_silently = self.get_option("fail_silently")
         storage = KeepassDatabase(display, self.get_option("database"))
 
-        return list(map(lambda term: storage.execute(Query(term).search, check_mode=check_mode, fail_silently=fail_silently), terms))
+        display.vvv("keepass: terms %s" % terms)
+        return list(map(lambda term: storage.execute(Query(display, term).search, check_mode=check_mode, fail_silently=fail_silently), terms))

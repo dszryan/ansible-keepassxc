@@ -10,6 +10,8 @@ from unittest.mock import call
 from uuid import UUID
 
 from ansible.errors import AnsibleError, AnsibleParserError
+from ansible.module_utils.common.text.converters import to_native
+from ansible.plugins import display
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
@@ -64,25 +66,25 @@ class TestStorage(TestCase):
             ]
         }
 
-        self._query_password = Query("get://one/two/test?password")
-        self._query_custom = Query("get://one/two/test?test_custom_key")
-        self._query_file = Query("get://one/two/test?scratch.keyfile")
-        self._query_invalid = Query("get://one/two/test?DOES_NOT_EXISTS")
-        self._query_clone = Query("get://one/two/clone?password")
+        self._query_password = Query(display, "get://one/two/test?password")
+        self._query_custom = Query(display, "get://one/two/test?test_custom_key")
+        self._query_file = Query(display, "get://one/two/test?scratch.keyfile")
+        self._query_invalid = Query(display, "get://one/two/test?DOES_NOT_EXISTS")
+        self._query_clone = Query(display, "get://one/two/clone?password")
 
-        self._delete_entry = Query("del://one/two/test")
-        self._delete_password = Query("del://one/two/test?password")
-        self._delete_custom = Query("del://one/two/test?test_custom_key")
-        self._delete_file = Query("del://one/two/test?scratch.keyfile")
-        self._delete_clone = Query("del://one/two/clone?password")
-        self._delete_invalid_entry = Query("del://one/two/DOES_NOT_EXISTS")
-        self._delete_invalid_property = Query("del://one/two/test?DOES_NOT_EXISTS")
+        self._delete_entry = Query(display, "del://one/two/test")
+        self._delete_password = Query(display, "del://one/two/test?password")
+        self._delete_custom = Query(display, "del://one/two/test?test_custom_key")
+        self._delete_file = Query(display, "del://one/two/test?scratch.keyfile")
+        self._delete_clone = Query(display, "del://one/two/clone?password")
+        self._delete_invalid_entry = Query(display, "del://one/two/DOES_NOT_EXISTS")
+        self._delete_invalid_property = Query(display, "del://one/two/test?DOES_NOT_EXISTS")
 
-        self._search_path_valid = Query("get://one/two/test")
-        self._search_path_invalid = Query("get://one/two/new")
+        self._search_path_valid = Query(display, "get://one/two/test")
+        self._search_path_invalid = Query(display, "get://one/two/new")
         self._clone_entry = dict(self._database_entry, title="clone", username="{REF:U@I:9366B38F2EE9412FA6BAB2AB10D1F100}", password="{REF:P@I:9366B38F2EE9412FA6BAB2AB10D1F100}", attachments=[])
-        self._post_path_invalid = Query("post://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
-        self._noop_path_valid = Query("put://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
+        self._post_path_invalid = Query(display, "post://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
+        self._noop_path_valid = Query(display, "put://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
         self._update_entry_value = {
             "title": "test",
             "path": "one/two/",
@@ -98,7 +100,7 @@ class TestStorage(TestCase):
                 {"filename": "scratch.keyfile", "length": 18}
             ]
         }
-        self._update_path_valid = Query('put://one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "scratch.keyfile", "binary": "this is a new file"}]}')
+        self._update_path_valid = Query(display, 'put://one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "scratch.keyfile", "binary": "this is a new file"}]}')
         self._insert_entry_value = {
             "title": "test",
             "path": "new_path/one/two/",
@@ -114,7 +116,7 @@ class TestStorage(TestCase):
                 {"filename": "new_file", "length": 18}
             ]
         }
-        self._insert_path_valid = Query('post://new_path/one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "new_file", "binary": "this is a new file"}]}')
+        self._insert_path_valid = Query(display, 'post://new_path/one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "new_file", "binary": "this is a new file"}]}')
         self._display = mock.Mock()
 
     def tearDown(self) -> None:
@@ -458,12 +460,13 @@ class TestStorage(TestCase):
         actual = storage.execute(self._search_path_valid.search, check_mode=False, fail_silently=True)
         self.assertFalse(actual["changed"])
         self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._search_path_valid.search.__dict__, actual["outcome"]["search"])
-        self.assertDictEqual(self._database_entry, actual["outcome"]["result"])
+        self.assertDictEqual(self._search_path_valid.search.__dict__, actual["result"]["search"])
+        self.assertDictEqual(self._database_entry, actual["result"]["outcome"])
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % self._database_details_valid["location"]),
             call.vvv("Keepass: keyfile found - %s" % self._database_details_valid["keyfile"]),
             call.v("Keepass: database opened - %s" % self._database_details_valid["location"]),
+            call.vvv('Keepass: execute - %s' % [{'search': to_native(self._search_path_valid.search)}, {'check_mode': 'False'}, {'fail_silently': 'True'}]),
             call.vv("KeePass: entry found - %s" % self._search_path_valid.search)
         ])
 
@@ -473,12 +476,13 @@ class TestStorage(TestCase):
         actual = storage.execute(self._insert_path_valid.search, check_mode=False, fail_silently=True)
         self.assertTrue(actual["changed"])
         self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._insert_path_valid.search.__dict__, actual["outcome"]["search"])
-        self.assertDictEqual(self._insert_entry_value, actual["outcome"]["result"])
+        self.assertDictEqual(self._insert_path_valid.search.__dict__, actual["result"]["search"])
+        self.assertDictEqual(self._insert_entry_value, actual["result"]["outcome"])
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
             call.v("Keepass: database opened - %s" % database_details_upsert["location"]),
+            call.vvv('Keepass: execute - %s' % [{'search': to_native(self._insert_path_valid.search)}, {'check_mode': 'False'}, {'fail_silently': 'True'}]),
             call.vv("KeePass: entry NOT found - %s" % self._insert_path_valid.search),
             call.v("Keepass: database saved - %s" % database_details_upsert["location"]),
             call.vv("KeePass: entry found - %s" % self._insert_path_valid.search)
@@ -490,12 +494,13 @@ class TestStorage(TestCase):
         actual = storage.execute(self._update_path_valid.search, check_mode=False, fail_silently=True)
         self.assertTrue(actual["changed"])
         self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._update_path_valid.search.__dict__, actual["outcome"]["search"])
-        self.assertDictEqual(self._update_entry_value, actual["outcome"]["result"])
+        self.assertDictEqual(self._update_path_valid.search.__dict__, actual["result"]["search"])
+        self.assertDictEqual(self._update_entry_value, actual["result"]["outcome"])
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
             call.v("Keepass: database opened - %s" % database_details_upsert["location"]),
+            call.vvv('Keepass: execute - %s' % [{'search': to_native(self._update_path_valid.search)}, {'check_mode': 'False'}, {'fail_silently': 'True'}]),
             call.vv("KeePass: entry found - %s" % self._update_path_valid.search),
             call.v("Keepass: database saved - %s" % database_details_upsert["location"]),
             call.vv("KeePass: entry found - %s" % self._update_path_valid.search)
@@ -507,12 +512,13 @@ class TestStorage(TestCase):
         actual = storage.execute(self._noop_path_valid.search, check_mode=False, fail_silently=False)
         self.assertFalse(actual["changed"])
         self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._noop_path_valid.search.__dict__, actual["outcome"]["search"])
-        self.assertDictEqual(self._clone_entry, actual["outcome"]["result"])
+        self.assertDictEqual(self._noop_path_valid.search.__dict__, actual["result"]["search"])
+        self.assertDictEqual(self._clone_entry, actual["result"]["outcome"])
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_upsert["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_upsert["keyfile"]),
             call.v("Keepass: database opened - %s" % database_details_upsert["location"]),
+            call.vvv('Keepass: execute - %s' % [{'search': to_native(self._noop_path_valid.search)}, {'check_mode': 'False'}, {'fail_silently': 'False'}]),
             call.vv("KeePass: entry found - %s" % self._noop_path_valid.search)
         ])
 
@@ -522,15 +528,17 @@ class TestStorage(TestCase):
         actual = storage.execute(self._delete_entry.search, check_mode=False, fail_silently=False)
         self.assertTrue(actual["changed"])
         self.assertFalse(actual["failed"])
-        self.assertDictEqual(self._delete_entry.search.__dict__, actual["outcome"]["search"])
-        self.assertEqual(None, actual["outcome"]["result"])
+        self.assertDictEqual(self._delete_entry.search.__dict__, actual["result"]["search"])
+        self.assertEqual(None, actual["result"]["outcome"])
         self._display.assert_has_calls([
             call.v("Keepass: database found - %s" % database_details_delete["location"]),
             call.vvv("Keepass: keyfile found - %s" % database_details_delete["keyfile"]),
             call.v("Keepass: database opened - %s" % database_details_delete["location"]),
+            call.vvv('Keepass: execute - %s' % [{'search': to_native(self._delete_entry.search)}, {'check_mode': 'False'}, {'fail_silently': 'False'}]),
             call.vv("KeePass: entry found - %s" % self._delete_entry.search),
             call.v("Keepass: database saved - %s" % database_details_delete["location"])
         ])
+        # {\'search\': \'{"action": "del", "path": "one/two/test", "field": null, "value": "", "value_was_provided": false}\'}, {\'check_mode\': \'False\'}, {\'\': \'False\'}]
 
     def test_execute_invalid_not_updatable_fail_silently(self):
         database_details_delete = dict(self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16))), updatable=False)
@@ -538,8 +546,8 @@ class TestStorage(TestCase):
         actual = storage.execute(self._delete_entry.search, check_mode=False, fail_silently=True)
         self.assertFalse(actual["changed"])
         self.assertTrue(actual["failed"])
-        self.assertDictEqual(self._delete_entry.search.__dict__, actual["outcome"]["search"])
-        self.assertTrue("Invalid query - database is not 'updatable'" in (actual["outcome"]["result"]["error"]))
+        self.assertDictEqual(self._delete_entry.search.__dict__, actual["result"]["search"])
+        self.assertTrue("Invalid query - database is not 'updatable'" in (actual["result"]["outcome"]["error"]))
         self._display.assert_has_calls([])
 
     def test_execute_invalid_not_updatable_not_silently_throw(self):

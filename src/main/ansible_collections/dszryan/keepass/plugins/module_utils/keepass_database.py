@@ -3,19 +3,21 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import base64
+import inspect
 import os
 import traceback
 import uuid
 from typing import Tuple, Union, AnyStr
 
 from ansible.errors import AnsibleParserError, AnsibleError
+from ansible.module_utils.common.text.converters import to_native
 from ansible.utils.display import Display
 from pykeepass import PyKeePass
 from pykeepass.attachment import Attachment
 from pykeepass.entry import Entry
 from pykeepass.group import Group
 
-from ansible_collections.dszryan.keepass.plugins.module_utils import EntryDump, Outcome
+from ansible_collections.dszryan.keepass.plugins.module_utils import EntryDump, Result
 from ansible_collections.dszryan.keepass.plugins.module_utils.search import Search
 
 
@@ -194,13 +196,14 @@ class KeepassDatabase(object):
         return True, (None if search.field is None else EntryDump(self._entry_find(search, not_found_throw=True)).__dict__)
 
     def execute(self, search: Search, check_mode: bool, fail_silently: bool) -> dict:
-        outcome = Outcome(search)
+        self._display.vvv(u"Keepass: execute - %s" % list(({key: to_native(value)} for key, value in inspect.currentframe().f_locals.items() if key != "self" and not key.startswith("__"))))
+        result = Result(search)
         try:
             if not self.is_updatable and search.action != "get":
                 raise AttributeError(u"Invalid query - database is not 'updatable'")
-            outcome.success(getattr(self, search.action.replace("del", "delete"))(search, check_mode))
+            result.success(getattr(self, search.action.replace("del", "delete"))(search, check_mode))
         except Exception as error:
             if not fail_silently:
                 raise AnsibleParserError(AnsibleError(message=traceback.format_exc(), orig_exc=error))
-            outcome.failure((traceback.format_exc(), error))
-        return outcome.__dict__
+            result.fail((traceback.format_exc(), error))
+        return result.__dict__

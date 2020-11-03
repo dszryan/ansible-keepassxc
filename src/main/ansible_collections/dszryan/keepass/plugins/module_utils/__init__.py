@@ -23,21 +23,21 @@ class EntryDump(object):
         self.attachments = [{"filename": attachment.filename, "length": len(attachment.binary)} for index, attachment in enumerate(entry.attachments)] or []    # type: list
 
 
-class Outcome(object):
+class Result(object):
     def __init__(self, search_value: Search):
         self.changed = False                                                # type: bool
         self.failed = False                                                 # type: bool
-        self.outcome = {"search": search_value.__dict__, "result": None}    # type: dict
+        self.result = {"search": search_value.__dict__, "outcome": None}    # type: dict
 
-    def success(self, outcome: Tuple[bool, dict]):
-        self.changed = outcome[0]
-        self.outcome["result"] = outcome[1]
+    def success(self, result: Tuple[bool, dict]):
+        self.changed = result[0]
+        self.result["outcome"] = result[1]
 
-    def failure(self, outcome: Tuple[str, Exception]):
+    def fail(self, result: Tuple[str, Exception]):
         self.failed = True
-        self.outcome["result"] = {
-            "trace": outcome[0],
-            "error": to_native(outcome[1])
+        self.result["outcome"] = {
+            "trace": result[0],
+            "error": to_native(result[1])
         }
 
     def __str__(self) -> str:
