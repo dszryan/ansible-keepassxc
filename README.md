@@ -12,7 +12,10 @@
       ```
     
   - ### install
+    ```
+    #!/bin/bash
     ansible-galaxy collection install git+https://github.com/dszryan/ansible-keepass.git,main
+    ```
     
   - ### run
     
@@ -28,6 +31,11 @@
         location: ~/keepass/updateable.kbdx
         keyfile: ~/keepass/keyfile
         updatable: true
+
+    configuration:
+      first_secret_password:
+        database: "{{ keepass.ansible }}"
+        lookup: get://first_secret?password
     ```
     
     #### sample playbook
@@ -37,11 +45,15 @@
       collections:
         - dszryan.keepass
       tasks:
-        - name: show values from readonly file
+        - name: using the lookup plugin
           debug:
             msg: "{{ lookup('dszryan.keepass.lookup', 'get://first_secret', 'get://second/secret', database=keepass.ansible, fail_silently=true) }}"
 
-        - name: update scratch file
+        - name: using the filter plugin
+          debug:
+            msg: "{{ configuration.first_secret_password | dszryan.keepass.lookup }}"
+
+        - name: using the action plugin
           keepass:
             database: "{{ keepass.scratch }}"
             action: put
