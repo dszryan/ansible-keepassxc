@@ -159,8 +159,9 @@ class ActionModule(ActionBase):
         if self._task.args.get("term", None) is not None and len(set(self._search_args).intersection(set(self._task.args.keys()))) > 0:
             raise AnsibleParserError(AnsibleError(u"'term' is mutually exclusive with %s" % self._search_args))
 
-        search = Query(display, self._task.args["term"]).search if self._task.args.get("term", None) is not None else \
+        search = Query(display, False, self._task.args["term"]).search if self._task.args.get("term", None) is not None else \
             Search(display=display,
+                   read_only=False,
                    action=self._task.args.get("action", None),
                    path=self._task.args.get("path", None),
                    field=self._task.args.get("field", None),

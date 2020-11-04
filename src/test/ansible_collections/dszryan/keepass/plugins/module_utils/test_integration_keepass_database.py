@@ -66,25 +66,25 @@ class TestStorage(TestCase):
             ]
         }
 
-        self._query_password = Query(display, "get://one/two/test?password")
-        self._query_custom = Query(display, "get://one/two/test?test_custom_key")
-        self._query_file = Query(display, "get://one/two/test?scratch.keyfile")
-        self._query_invalid = Query(display, "get://one/two/test?DOES_NOT_EXISTS")
-        self._query_clone = Query(display, "get://one/two/clone?password")
+        self._query_password = Query(display, True, "get://one/two/test?password")
+        self._query_custom = Query(display, True, "get://one/two/test?test_custom_key")
+        self._query_file = Query(display, True, "get://one/two/test?scratch.keyfile")
+        self._query_invalid = Query(display, True, "get://one/two/test?DOES_NOT_EXISTS")
+        self._query_clone = Query(display, True, "get://one/two/clone?password")
 
-        self._delete_entry = Query(display, "del://one/two/test")
-        self._delete_password = Query(display, "del://one/two/test?password")
-        self._delete_custom = Query(display, "del://one/two/test?test_custom_key")
-        self._delete_file = Query(display, "del://one/two/test?scratch.keyfile")
-        self._delete_clone = Query(display, "del://one/two/clone?password")
-        self._delete_invalid_entry = Query(display, "del://one/two/DOES_NOT_EXISTS")
-        self._delete_invalid_property = Query(display, "del://one/two/test?DOES_NOT_EXISTS")
+        self._delete_entry = Query(display, False, "del://one/two/test")
+        self._delete_password = Query(display, False, "del://one/two/test?password")
+        self._delete_custom = Query(display, False, "del://one/two/test?test_custom_key")
+        self._delete_file = Query(display, False, "del://one/two/test?scratch.keyfile")
+        self._delete_clone = Query(display, False, "del://one/two/clone?password")
+        self._delete_invalid_entry = Query(display, False, "del://one/two/DOES_NOT_EXISTS")
+        self._delete_invalid_property = Query(display, False, "del://one/two/test?DOES_NOT_EXISTS")
 
-        self._search_path_valid = Query(display, "get://one/two/test")
-        self._search_path_invalid = Query(display, "get://one/two/new")
+        self._search_path_valid = Query(display, True, "get://one/two/test")
+        self._search_path_invalid = Query(display, True, "get://one/two/new")
         self._clone_entry = dict(self._database_entry, title="clone", username="{REF:U@I:9366B38F2EE9412FA6BAB2AB10D1F100}", password="{REF:P@I:9366B38F2EE9412FA6BAB2AB10D1F100}", attachments=[])
-        self._post_path_invalid = Query(display, "post://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
-        self._noop_path_valid = Query(display, "put://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
+        self._post_path_invalid = Query(display, False, "post://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
+        self._noop_path_valid = Query(display, False, "put://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
         self._update_entry_value = {
             "title": "test",
             "path": "one/two/",
@@ -100,7 +100,7 @@ class TestStorage(TestCase):
                 {"filename": "scratch.keyfile", "length": 18}
             ]
         }
-        self._update_path_valid = Query(display, 'put://one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "scratch.keyfile", "binary": "this is a new file"}]}')
+        self._update_path_valid = Query(display, False, 'put://one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "scratch.keyfile", "binary": "this is a new file"}]}')
         self._insert_entry_value = {
             "title": "test",
             "path": "new_path/one/two/",
@@ -116,7 +116,7 @@ class TestStorage(TestCase):
                 {"filename": "new_file", "length": 18}
             ]
         }
-        self._insert_path_valid = Query(display, 'post://new_path/one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "new_file", "binary": "this is a new file"}]}')
+        self._insert_path_valid = Query(display, False, 'post://new_path/one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "new_file", "binary": "this is a new file"}]}')
         self._display = mock.Mock()
 
     def tearDown(self) -> None:

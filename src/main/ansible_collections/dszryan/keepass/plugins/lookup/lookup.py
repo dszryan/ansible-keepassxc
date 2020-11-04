@@ -103,4 +103,4 @@ class LookupModule(LookupBase):
         storage = KeepassDatabase(display, self.get_option("database"))
 
         display.vvv("keepass: terms %s" % terms)
-        return list(map(lambda term: storage.execute(Query(display, term).search, check_mode=check_mode, fail_silently=fail_silently), terms))
+        return list(map(lambda term: storage.execute(Query(display, True, term).search, check_mode=check_mode, fail_silently=fail_silently), terms))
