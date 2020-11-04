@@ -14,9 +14,10 @@ from ansible_collections.dszryan.keepass.plugins.module_utils.search import Sear
 class Query(object):
     _PATTERN = u"(get|put|post|del)?:\\/\\/(((?![#\\?])[\\s\\S])*)(\\?(((?!#)[\\s\\S])*))?(#(.*))?"
 
-    def __init__(self, display, term: str):
+    def __init__(self, display, read_only: bool, term: str):
         self._display = display
-        self.term = term            # type: str
+        self.read_only = read_only     # type: bool
+        self.term = term                # type: str
 
     @property
     def search(self) -> Search:
@@ -30,6 +31,7 @@ class Query(object):
             self._display.vvv(u"Keepass: matches - [%s]" % to_native(matches))
             return Search(
                 display=self._display,
+                read_only=self.read_only,
                 action=matches[0] if matches[0] != "" else None,
                 path=matches[1] if matches[1] != "" else None,
                 field=matches[4] if matches[4] != "" else None,

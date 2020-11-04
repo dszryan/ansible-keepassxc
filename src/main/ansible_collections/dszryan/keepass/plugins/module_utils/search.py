@@ -10,7 +10,8 @@ from ansible.module_utils.common.text.converters import to_native
 
 
 class Search(object):
-    def __init__(self, display, action: str, path: str, field: str, value: dict, value_was_provided: bool):
+    def __init__(self, display, read_only: bool, action: str, path: str, field: str, value: dict, value_was_provided: bool):
+        self.read_only = read_only                                                                      # type: bool
         self.action = action                                                                            # type: str
         self.path = path                                                                                # type: str
         self.field = field                                                                              # type: str
@@ -23,6 +24,8 @@ class Search(object):
         try:
             if self.action is None or self.action == "":
                 raise AttributeError(u"Invalid query - no action")
+            if self.read_only and self.action != "get":
+                raise AttributeError(u"Invalid query - only get operations supported")
             if self.path is None or self.path == "":
                 raise AttributeError(u"Invalid query - no path")
             if self.action == "del" and not (self.value is None or self.value == ""):
