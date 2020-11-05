@@ -44,7 +44,7 @@ options:
     description:
       - when true, exception raised are muted and returned as part of the result.
       - when false, an exception raised will halt any further executions
-    default: True
+    default: False
     type: bool
     choices:
       - False
@@ -96,11 +96,17 @@ result:
 
 
 class LookupModule(LookupBase):
+
+    @staticmethod
+    def execute(database: KeepassDatabase, term: str, check_mode: bool, fail_silently: bool):
+        search_result = database.execute(Query(display, True, term).search, check_mode=check_mode, fail_silently=fail_silently)
+        return next(enumerate(search_result["result"]["outcome"].values()))[1] if "?" in term and not fail_silently else search_result
+
     def run(self, terms, variables=None, **kwargs):
         self.set_options(var_options=variables, direct=kwargs)
-        check_mode = self.get_option("check_mode")
-        fail_silently = self.get_option("fail_silently")
-        storage = KeepassDatabase(display, self.get_option("database"))
+        database = KeepassDatabase(display, self.get_option("database"))
+        check_mode = self.get_option("check_mode", False)
+        fail_silently = self.get_option("fail_silently", False)
 
         display.vvv("keepass: terms %s" % terms)
-        return list(map(lambda term: storage.execute(Query(display, True, term).search, check_mode=check_mode, fail_silently=fail_silently), terms))
+        return list(map(lambda term: LookupModule.execute(database, term, check_mode, fail_silently), terms))

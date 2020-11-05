@@ -25,6 +25,7 @@ def do_lookup(value):
 
 class FilterModule(object):
 
+    # noinspection PyMethodMayBeStatic
     def filters(self):
         return {
             'lookup': do_lookup,
