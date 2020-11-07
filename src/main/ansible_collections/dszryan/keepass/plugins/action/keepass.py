@@ -2,13 +2,16 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from ansible.errors import AnsibleError, AnsibleParserError
+from typing import Optional
+
+from ansible.errors import AnsibleParserError, AnsibleError
 from ansible.plugins import display
 from ansible.plugins.action import ActionBase
 
+from ansible_collections.dszryan.keepass.plugins.module_utils import RequestQuery
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
-from ansible_collections.dszryan.keepass.plugins.module_utils.search import Search
-from ansible_collections.dszryan.keepass.plugins.module_utils.query import Query
+from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
+from ansible_collections.dszryan.keepass.plugins.module_utils.request_term import RequestTerm
 
 DOCUMENTATION = """
 module: keepass
@@ -136,14 +139,48 @@ EXAMPLES = """
 """
 
 RETURN = """
-result:
-  description: the result of the query execution
-  type: complex
+query:
+  description: the query that was executed
+  returned: always
+  type: dict
   contains:
-    search:
-      description: the query that was executed
-    result:
-      description: when not failed the result of the query. and when failed and fail_silently the error details
+    read_only:
+      description: an indication if write operations are supported
+      returned: always
+      type: bool
+    action:
+      description: the action requested
+      returned: success
+      type: str
+    path:
+      description: path to the entry
+      returned: success
+      type: str
+    field:
+      description: trace back to the raised exception
+      returned: success, when provided
+      type: str
+    value:
+      description: the value provided (default value for get operation, insert value for post, upsert value for put)
+      returned: success, when provided
+      type: str
+stdout:
+  description: dictionary representing the requested data
+  returned: success
+  type: dict
+stderr:
+  description: exception details, when and exception was raised and fail_silently is set
+  returned: not success and I(fail_silently=True)
+  type: dict
+  contains:
+    trace:
+      description: trace back to the raised exception
+      returned: always
+      type: str
+    error:
+      description: the original exception that was raised
+      returned: always
+      type: str
 """
 
 
@@ -155,18 +192,19 @@ class ActionModule(ActionBase):
 
     def run(self, tmp=None, task_vars=None):
         super(ActionModule, self).run(tmp, task_vars)
-        display.vvv("keepass: args - %s" % list(({key: value} for key, value in self._task.args.items() if key != "database")))
+        display.v(u"keepass: args - %s" % list(({key: value} for key, value in self._task.args.items() if key != "database")))
         if self._task.args.get("term", None) is not None and len(set(self._search_args).intersection(set(self._task.args.keys()))) > 0:
             raise AnsibleParserError(AnsibleError(u"'term' is mutually exclusive with %s" % self._search_args))
 
-        search = Query(display, False, self._task.args["term"]).search if self._task.args.get("term", None) is not None else \
-            Search(display=display,
-                   read_only=False,
-                   action=self._task.args.get("action", None),
-                   path=self._task.args.get("path", None),
-                   field=self._task.args.get("field", None),
-                   value=self._task.args.get("value", None),
-                   value_was_provided=self._task.args.get("value", None) is not None)
+        database_details = self._task.args.get("database", None)                                                    # type: Optional[dict]
+        key_cache = KeepassKeyCache(task_vars.get('inventory_hostname', None), database_details, display)           # type: KeepassKeyCache
+        query = RequestTerm(display, False, self._task.args["term"]).query if self._task.args.get("term", None) is not None else \
+            RequestQuery(display=display,
+                         read_only=False,
+                         action=self._task.args.get("action", None),
+                         path=self._task.args.get("path", None),
+                         field=self._task.args.get("field", None),
+                         value=self._task.args.get("value", None))                                                  # type: RequestQuery
 
-        return KeepassDatabase(display, self._task.args.get("database", None)).\
-            execute(search, self._task.args.get("check_mode", False), self._task.args.get("fail_silently", False))
+        return KeepassDatabase(database_details, key_cache, display).\
+            execute(query, self._task.args.get("check_mode", False), self._task.args.get("fail_silently", False))   # type: dict

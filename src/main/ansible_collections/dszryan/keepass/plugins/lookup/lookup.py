@@ -6,7 +6,8 @@ from ansible.plugins import display
 from ansible.plugins.lookup import LookupBase
 
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
-from ansible_collections.dszryan.keepass.plugins.module_utils.query import Query
+from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
+from ansible_collections.dszryan.keepass.plugins.module_utils.request_term import RequestTerm
 
 DOCUMENTATION = """
 module: lookup
@@ -83,30 +84,21 @@ EXAMPLES = """
     keepass: "{{ lookup('dszryan.keepass.lookup', del://path/to/entity?field, database=parent_name.read_only_database, check_mode=false, fail_silently=false) }}"    
 """
 
-RETURN = """
-result:
-  description: the result of the query execution
-  type: complex
-  contains:
-    search:
-      description: the query that was executed
-    result:
-      description: when not failed the result of the query. and when failed and fail_silently the error details
-"""
-
 
 class LookupModule(LookupBase):
 
     @staticmethod
     def execute(database: KeepassDatabase, term: str, check_mode: bool, fail_silently: bool):
-        search_result = database.execute(Query(display, True, term).search, check_mode=check_mode, fail_silently=fail_silently)
-        return next(enumerate(search_result["result"]["outcome"].values()))[1] if "?" in term and not fail_silently else search_result
+        outcome = database.execute(RequestTerm(display, True, term).query, check_mode=check_mode, fail_silently=fail_silently)["stdout"]    # type: dict
+        return next(enumerate(outcome.values()))[1] if "?" in term and not fail_silently else outcome                                       # type: Union[str, dict]
 
     def run(self, terms, variables=None, **kwargs):
         self.set_options(var_options=variables, direct=kwargs)
-        database = KeepassDatabase(display, self.get_option("database"))
-        check_mode = self.get_option("check_mode", False)
-        fail_silently = self.get_option("fail_silently", False)
+        database_details = self.get_option("database", None)                                                                                # type: Optional[dict]
+        key_cache = KeepassKeyCache(variables["inventory_hostname"], database_details, display)                                             # type: KeepassKeyCache
+        database = KeepassDatabase(database_details, key_cache, display)                                                                    # type: KeepassDatabase
+        check_mode = self.get_option("check_mode", False)                                                                                   # type: bool
+        fail_silently = self.get_option("fail_silently", False)                                                                             # type: bool
 
-        display.vvv("keepass: terms %s" % terms)
-        return list(map(lambda term: LookupModule.execute(database, term, check_mode, fail_silently), terms))
+        display.v(u"keepass: terms %s" % terms)
+        return list(map(lambda term: LookupModule.execute(database, term, check_mode, fail_silently), terms))                               # type: List[dict]

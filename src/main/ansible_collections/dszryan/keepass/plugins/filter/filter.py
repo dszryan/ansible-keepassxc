@@ -7,7 +7,7 @@ from ansible.module_utils.common.text.converters import to_native
 from ansible.plugins import display
 
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
-from ansible_collections.dszryan.keepass.plugins.module_utils.query import Query
+from ansible_collections.dszryan.keepass.plugins.module_utils.request_term import RequestTerm
 
 
 def do_lookup(value):
@@ -15,9 +15,10 @@ def do_lookup(value):
         if not isinstance(value, dict) or value.get("database", None) is None or value.get("lookup", None) is None:
             raise AttributeError("must be a dictionary providing the following elements database (must a valid database description) and lookup")
 
-        display.vvv("keepass: lookup %s" % value["lookup"])
-        outcome = KeepassDatabase(display, value["database"]).execute(Query(display, True, value["lookup"]).search, check_mode=False, fail_silently=False)["result"]["outcome"]
-        return next(enumerate(outcome.values()))[1] if "?" in value["lookup"] else outcome
+        display.v(u"keepass: lookup %s" % value["lookup"])
+        storage = KeepassDatabase(value["database"], None, display)                                                                     # type: KeepassDatabase
+        outcome = storage.execute(RequestTerm(display, True, value["lookup"]).query, check_mode=False, fail_silently=False)["stdout"]   # type: dict
+        return next(enumerate(outcome.values()))[1] if "?" in value["lookup"] else outcome                                              # type: Union[str, dict]
 
     except Exception as error:
         raise AnsibleFilterError(AnsibleError(message=to_native(error), orig_exc=error))

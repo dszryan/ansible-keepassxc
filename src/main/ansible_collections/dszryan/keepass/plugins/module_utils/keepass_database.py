@@ -7,9 +7,9 @@ import inspect
 import os
 import traceback
 import uuid
-from typing import Tuple, Union, AnyStr
+from typing import List, Tuple, Union, Optional
 
-from ansible.errors import AnsibleParserError, AnsibleError
+from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
 from ansible.utils.display import Display
 from pykeepass import PyKeePass
@@ -17,38 +17,67 @@ from pykeepass.attachment import Attachment
 from pykeepass.entry import Entry
 from pykeepass.group import Group
 
-from ansible_collections.dszryan.keepass.plugins.module_utils import EntryDump, Result
-from ansible_collections.dszryan.keepass.plugins.module_utils.search import Search
+from ansible_collections.dszryan.keepass.plugins.module_utils import RequestQuery, EntryDump, Result
+from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 
 
 class KeepassDatabase(object):
-    def __init__(self, display: Display, details: dict):
-        self._display = display                                         # type: Display
-        self.location = details.get("location", None)                   # type: Union[AnyStr, None]
-        self.keyfile = details.get("keyfile", None)                     # type: Union[AnyStr, None]
-        self.password = details.get("password", None)                   # type: Union[AnyStr, None]
-        self.transformed_key = details.get("transformed_key", None)     # type: Union[AnyStr, None]
-        self.is_updatable = details.get("updatable", False)             # type: bool
-        self._database = self._open()                                   # type: PyKeePass
+    def __init__(self, details: Optional[dict], key_cache: Optional[KeepassKeyCache], display: Display):
+        self._display = display                                                             # type: Display
 
-    def _open(self) -> PyKeePass:
-        if self.location is None or not os.path.isfile(os.path.realpath(os.path.expanduser(os.path.expandvars(self.location)))):
-            raise AnsibleParserError(u"could not find keepass database - %s" % self.location)
-        self._display.v(u"Keepass: database found - %s" % self.location)
+        self._warnings = []                                                                 # type: List[str]
+        if not KeepassKeyCache.get_secrets(details):
+            self._warnings.append("Your keepass secrets are in clear text, why use a key store?")
 
-        if self.keyfile is not None:
-            if not os.path.isfile(os.path.realpath(os.path.expanduser(os.path.expandvars(self.keyfile)))):
-                raise AnsibleParserError(u"could not find keyfile - %s" % self.keyfile)
-            self._display.vvv(u"Keepass: keyfile found - %s" % self.keyfile)
+        self._database, self._location, self._is_updatable = \
+            self._open(details, key_cache, display)                                         # type: [PyKeePass, str, bool]
 
-        database = PyKeePass(
-            filename=os.path.realpath(os.path.expanduser(os.path.expandvars(self.location))),
-            keyfile=(os.path.realpath(os.path.expanduser(os.path.expandvars(self.keyfile))) if self.keyfile is not None else None),
-            password=self.password,
-            transformed_key=self.transformed_key)
-        self._display.v(u"Keepass: database opened - %s" % self.location)
+    # noinspection PyBroadException
+    @staticmethod
+    def _open(details: dict, key_cache: KeepassKeyCache, display) -> [PyKeePass, str, bool]:
+        database = None                                                                     # type: Optional[PyKeePass]
+        location = details.get("location", None)                                            # type: Optional[str]
+        keyfile = details.get("keyfile", None)                                              # type: Optional[str]
+        password = details.get("password", None)                                            # type: Optional[str]
+        transformed_key = details.get("transformed_key", None)                              # type: Optional[bytes]
+        updatable = details.get("updatable", False)                                         # type: bool
 
-        return database
+        # must have validation
+        if not location or not os.path.isfile(os.path.realpath(os.path.expanduser(os.path.expandvars(location)))):
+            raise AnsibleParserError(u"could not find keepass database - %s" % location)
+        location = os.path.realpath(os.path.expanduser(os.path.expandvars(location)))
+        cached_transform_key = key_cache.get() if key_cache and key_cache.is_valid else None   # type Optional[bytes]
+
+        try:
+            if cached_transform_key:
+                display.vv(u"Keepass: database REOPEN - %s" % location)
+                database = PyKeePass(filename=location, transformed_key=cached_transform_key)
+        except Exception:
+            display.vv(u"Keepass: database REOPEN FAILED - Cleared Cache - %s" % location)
+            database = None
+            cached_transform_key = None
+
+        if not database:
+            display.v(u"Keepass: database found - %s" % location)
+
+            if transformed_key:
+                display.vv(u"Keepass: database QUICK OPEN - %s" % location)
+                database = PyKeePass(filename=location, transformed_key=transformed_key)
+            else:
+                if keyfile is not None:
+                    keyfile = os.path.realpath(os.path.expanduser(os.path.expandvars(keyfile)))
+                    if not os.path.isfile(keyfile):
+                        raise AnsibleParserError(u"could not find keyfile - %s" % keyfile)
+                    display.vvv(u"Keepass: keyfile found - %s" % keyfile)
+
+                display.vv(u"Keepass: database DEFAULT OPEN - %s" % location)
+                database = PyKeePass(filename=location, keyfile=keyfile, password=password)
+
+        if key_cache and key_cache.is_valid and not cached_transform_key:
+            key_cache.set(database.transformed_key)
+
+        display.v(u"Keepass: database opened - %s" % location)
+        return database, location, updatable
 
     # noinspection PyBroadException
     @staticmethod
@@ -64,25 +93,25 @@ class KeepassDatabase(object):
 
     def _save(self):
         self._database.save()
-        self._display.v(u"Keepass: database saved - %s" % self.location)
+        self._display.v(u"Keepass: database saved - %s" % self._location)
 
-    def _entry_find(self, search: Search, ref_uuid=None, not_found_throw=True) -> Entry:
-        entry = self._database.find_entries_by_path(path=search.path, first=True) if ref_uuid is None else self._database.find_entries_by_uuid(uuid=ref_uuid, first=True)
+    def _entry_find(self, query: RequestQuery, ref_uuid=None, not_found_throw=True) -> Union[Entry, None]:
+        entry = self._database.find_entries_by_path(path=query.path, first=True) if ref_uuid is None else self._database.find_entries_by_uuid(uuid=ref_uuid, first=True)
         if entry is None:
-            self._display.vv(u"KeePass: entry%s NOT found - %s" % ("" if ref_uuid is None else " (and its reference)", search))
+            self._display.vv(u"KeePass: entry%s NOT found - %s" % ("" if ref_uuid is None else " (and its reference)", query))
             if not_found_throw:
                 raise AnsibleError(u"Entry is not found")
             else:
                 return None
-        self._display.vv(u"KeePass: entry%s found - %s" % ("" if ref_uuid is None else " (and its reference)", search))
+        self._display.vv(u"KeePass: entry%s found - %s" % ("" if ref_uuid is None else " (and its reference)", query))
         return entry
 
-    def _entry_upsert(self, search: Search, check_mode: bool) -> Tuple[bool, dict]:
-        entry = self._entry_find(search, not_found_throw=False)
-        if search.action == "post" and entry is not None:
-            raise AttributeError(u"Invalid query - cannot post/insert when entry exists")
+    def _entry_upsert(self, query: RequestQuery, check_mode: bool) -> Tuple[bool, dict]:
+        entry = self._entry_find(query, not_found_throw=False)
+        if query.action == "post" and entry is not None:
+            raise AttributeError(u"Invalid request - cannot post/insert when entry exists")
 
-        path_split = (entry.path if entry is not None else search.path).rsplit("/", 1)
+        path_split = (entry.path if entry is not None else query.path).rsplit("/", 1)
         title = path_split if len(path_split) == 1 else path_split[1]
         group_path = "/" if len(path_split) == 1 else path_split[0]
 
@@ -94,7 +123,7 @@ class KeepassDatabase(object):
                 previous_group = found_group if found_group is not None else self._database.add_group(previous_group, path)
             destination_group = previous_group
 
-        search_value = dict(search.value)
+        search_value = dict(query.value)
         entry_is_created, entry_is_updated = (False, False)
         if not check_mode:
             if entry is None:
@@ -117,7 +146,7 @@ class KeepassDatabase(object):
                     for item in value:
                         filename = item["filename"]
                         binary, was_encoded = KeepassDatabase._get_binary(item["binary"])
-                        entry_attachment_item: Attachment = \
+                        entry_attachment_item: Union[Attachment, None] = \
                             ([attachment for index, attachment in enumerate(entry_attachments) if attachment.filename == filename] or [None])[0]
                         if entry_attachment_item is None or entry_attachment_item.binary != binary:
                             if not (entry_is_updated or entry_is_created):
@@ -142,66 +171,65 @@ class KeepassDatabase(object):
             if not entry_is_created:
                 entry.touch(True)
             self._save()
-            return True, EntryDump(self._entry_find(search)).__dict__
+            return True, EntryDump(self._entry_find(query)).__dict__
         else:
             return False, (EntryDump(entry).__dict__ if entry is not None else None)
 
-    def get(self, search: Search, check_mode=False) -> Tuple[bool, dict]:
-        entry = self._entry_find(search)
-        if search.field is None:
+    def get(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
+        entry = self._entry_find(query)
+        if query.field is None:
             return False, EntryDump(entry).__dict__
 
         # get entry value
-        result = getattr(entry, search.field, None) or \
-            entry.custom_properties.get(search.field, None) or \
-            ([attachment for index, attachment in enumerate(entry.attachments) if attachment.filename == search.field] or [None])[0] or \
-            (search.value if not check_mode and search.value_was_provided else None)
+        result = getattr(entry, query.field, None) or \
+                 entry.custom_properties.get(query.field, None) or \
+                 ([attachment for index, attachment in enumerate(entry.attachments) if attachment.filename == query.field] or [None])[0] or \
+                 (query.value if not check_mode and query.value is not None else None)
 
         # get reference value
-        if search.field in ["title", "username", "password", "url", "notes", "uuid"]:
-            if hasattr(result, "startswith") and result.startswith("{REF:"):
-                entry = self._entry_find(search, uuid.UUID(result.split(":")[2].strip("}")))
-                result = getattr(entry, search.field, (None if check_mode else search.value))
+        if query.field in ["title", "username", "password", "url", "notes", "uuid"] and \
+                hasattr(result, "startswith") and result.startswith("{REF:"):
+            entry = self._entry_find(query, uuid.UUID(result.split(":")[2].strip("}")))
+            result = getattr(entry, query.field, (None if check_mode else query.value))
 
-        # return result
-        if result is not None or (not check_mode and search.value_was_provided):
-            self._display.vv(u"KeePass: found property/file on entry - %s" % search)
-            return False, {search.field: (base64.b64encode(result.binary) if hasattr(result, "binary") else result)}
+        if result is not None or (not check_mode and query.value is not None):
+            self._display.vv(u"KeePass: found property/file on entry - %s" % query)
+            return False, {query.field: (base64.b64encode(result.binary) if hasattr(result, "binary") else result)}
 
         # throw error, value not found
         raise AttributeError(u"No property/file found")
 
-    def post(self, search: Search, check_mode=False) -> Tuple[bool, dict]:
-        return self._entry_upsert(search, check_mode)
+    def post(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
+        return self._entry_upsert(query, check_mode)
 
-    def put(self, search: Search, check_mode=False) -> Tuple[bool, dict]:
-        return self._entry_upsert(search, check_mode)
+    def put(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
+        return self._entry_upsert(query, check_mode)
 
-    def delete(self, search: Search, check_mode=False) -> Tuple[bool, dict]:
-        entry = self._entry_find(search, not_found_throw=True)
-        if search.field is None:
+    def delete(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
+        entry = self._entry_find(query, not_found_throw=True)
+        if query.field is None:
             self._database.delete_entry(entry) and not check_mode
-        elif hasattr(entry, search.field):
-            setattr(entry, search.field, ("" if search.field in ["username", "password"] else None)) and not check_mode
-        elif search.field in entry.custom_properties.keys():
-            entry.delete_custom_property(search.field) and not check_mode
+        elif hasattr(entry, query.field):
+            setattr(entry, query.field, ("" if query.field in ["username", "password"] else None)) and not check_mode
+        elif query.field in entry.custom_properties.keys():
+            entry.delete_custom_property(query.field) and not check_mode
         else:
-            attachment = ([attachment for index, attachment in enumerate(entry.attachments) if attachment.filename == search.field] or [None])[0]
+            attachment = ([attachment for index, attachment in enumerate(entry.attachments) if attachment.filename == query.field] or [None])[0]
             if attachment is not None:
                 entry.delete_attachment(attachment) and not check_mode
             else:
                 raise AttributeError(u"No property/file found")
 
         self._save() and not check_mode
-        return True, (None if search.field is None else EntryDump(self._entry_find(search, not_found_throw=True)).__dict__)
+        return True, (None if query.field is None else EntryDump(self._entry_find(query, not_found_throw=True)).__dict__)
 
-    def execute(self, search: Search, check_mode: bool, fail_silently: bool) -> dict:
+    def execute(self, query: RequestQuery, check_mode: bool, fail_silently: bool) -> dict:
         self._display.vvv(u"Keepass: execute - %s" % list(({key: to_native(value)} for key, value in inspect.currentframe().f_locals.items() if key != "self" and not key.startswith("__"))))
-        result = Result(search)
+        result = Result(query, self._warnings)
         try:
-            if not self.is_updatable and search.action != "get":
-                raise AttributeError(u"Invalid query - database is not 'updatable'")
-            result.success(getattr(self, search.action.replace("del", "delete"))(search, check_mode))
+            if not self._is_updatable and query.action != "get":
+                raise AttributeError(u"Invalid request - database is not 'updatable'")
+            result.success(getattr(self, query.action.replace("del", "delete"))(query, check_mode))
         except Exception as error:
             if not fail_silently:
                 raise AnsibleParserError(AnsibleError(message=traceback.format_exc(), orig_exc=error))
