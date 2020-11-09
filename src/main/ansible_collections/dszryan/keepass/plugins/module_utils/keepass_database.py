@@ -11,10 +11,17 @@ from typing import List, Tuple, Union
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
 from ansible.utils.display import Display
-from pykeepass import PyKeePass
-from pykeepass.attachment import Attachment
-from pykeepass.entry import Entry
-from pykeepass.group import Group
+
+# noinspection PyBroadException
+try:
+    PYKEEPASS_IMP_ERR = None
+    from pykeepass import PyKeePass
+    from pykeepass.attachment import Attachment
+    from pykeepass.entry import Entry
+    from pykeepass.group import Group
+except Exception as import_error:
+    PYKEEPASS_IMP_ERR = traceback.format_exc()
+    PYKEEPASS_IMP_EXP = import_error
 
 from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils import RequestQuery, EntryDump, Result
@@ -23,6 +30,9 @@ from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache 
 
 class KeepassDatabase(object):
     def __init__(self, details: DatabaseDetails, key_cache: KeepassKeyCache, display: Display):
+        if PYKEEPASS_IMP_ERR:
+            raise AnsibleParserError(AnsibleError(message=PYKEEPASS_IMP_ERR, orig_exc=PYKEEPASS_IMP_EXP))
+
         self._display = display                                                             # type: Display
         self._warnings = []                                                                 # type: List[str]
         if not key_cache or not KeepassKeyCache.get_secrets(details):
@@ -143,7 +153,7 @@ class KeepassDatabase(object):
             self._save()
             return True, EntryDump(self._entry_find(query)).__dict__
         else:
-            return False, (EntryDump(entry).__dict__ if entry is not None else None)
+            return (check_mode or entry_is_created or entry_is_updated), (EntryDump(entry).__dict__ if entry is not None else None)
 
     def get(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
         entry = self._entry_find(query)
