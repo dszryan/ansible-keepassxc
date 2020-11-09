@@ -2,9 +2,11 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from ansible.plugins import display
+from typing import Union, List
+
 from ansible.plugins.lookup import LookupBase
 
+from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 from ansible_collections.dszryan.keepass.plugins.module_utils.request_term import RequestTerm
@@ -87,18 +89,18 @@ EXAMPLES = """
 
 class LookupModule(LookupBase):
 
-    @staticmethod
-    def execute(database: KeepassDatabase, term: str, check_mode: bool, fail_silently: bool):
-        outcome = database.execute(RequestTerm(display, True, term).query, check_mode=check_mode, fail_silently=fail_silently)["stdout"]    # type: dict
-        return next(enumerate(outcome.values()))[1] if "?" in term and not fail_silently else outcome                                       # type: Union[str, dict]
+    def _execute(self, database: KeepassDatabase, term: str, check_mode: bool, fail_silently: bool):
+        outcome = database.execute(RequestTerm(self._display, True, term).query, check_mode=check_mode, fail_silently=fail_silently)["stdout"]      # type: dict
+        return next(enumerate(outcome.values()))[1] if "?" in term and not fail_silently else outcome                                               # type: Union[str, dict]
 
     def run(self, terms, variables=None, **kwargs):
         self.set_options(var_options=variables, direct=kwargs)
-        database_details = self.get_option("database", None)                                                                                # type: Optional[dict]
-        key_cache = KeepassKeyCache(variables["inventory_hostname"], database_details, display)                                             # type: KeepassKeyCache
-        database = KeepassDatabase(database_details, key_cache, display)                                                                    # type: KeepassDatabase
-        check_mode = self.get_option("check_mode", False)                                                                                   # type: bool
-        fail_silently = self.get_option("fail_silently", False)                                                                             # type: bool
 
-        display.v(u"keepass: terms %s" % terms)
-        return list(map(lambda term: LookupModule.execute(database, term, check_mode, fail_silently), terms))                               # type: List[dict]
+        self._display.v(u"keepass: terms %s" % terms)
+        database_details = DatabaseDetails(self._display, **self.get_option("database", {}).copy())                 # type: DatabaseDetails
+        key_cache = KeepassKeyCache(variables.get("inventory_hostname", None), database_details, self._display)     # type: KeepassKeyCache
+        database = KeepassDatabase(database_details, key_cache, self._display)                                      # type: KeepassDatabase
+        check_mode = self.get_option("check_mode", False)                                                           # type: bool
+        fail_silently = self.get_option("fail_silently", False)                                                     # type: bool
+
+        return list(map(lambda term: self._execute(database, term, check_mode, fail_silently), terms))              # type: List[Union[str, dict]]

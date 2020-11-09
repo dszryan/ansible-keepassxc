@@ -2,13 +2,10 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from typing import Optional
-
-from ansible.errors import AnsibleParserError, AnsibleError
-from ansible.plugins import display
+import jmespath
 from ansible.plugins.action import ActionBase
 
-from ansible_collections.dszryan.keepass.plugins.module_utils import RequestQuery
+from ansible_collections.dszryan.keepass.plugins import DatabaseDetails, RequestQuery
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 from ansible_collections.dszryan.keepass.plugins.module_utils.request_term import RequestTerm
@@ -24,25 +21,26 @@ author:
 options:
   database:
     description:
-      - templated value that would return the following structure
-      - for the sample below, the value would be: {{ parent_name.read_only_database }} or {{ parent_name.updatable_database }}
-      # ---
-        parent_name:
-          read_only_database:
-            location: path of the database
-            password: !vault |
-                $ANSIBLE_VAULT;1.1;AES256 ...
-            keyfile: path to the keyfile
-            transformed_key:
-            updatable: false    # this is the default value when not provided and and would only support I(action=get)
-          updatable_database:
-            location: path of the database
-            password: !vault |
-                $ANSIBLE_VAULT;1.1;AES256 ...
-            keyfile: path to the keyfile
-            transformed_key:
-            updatable: true    # when explicitly provided as true, the database would support I(action=post), I(action=put) amd I(action=del)
-    type: dict
+      - jmespath that points to a dictionary with the database details (sample below)
+      - ---
+      - parent_name:
+      -   read_only_database:
+      -     location: path of the database
+      -     password: !vault |
+      -         $ANSIBLE_VAULT;1.1;AES256 ...
+      -     keyfile: path to the keyfile
+      -     transformed_key: None
+      -     profile: throughput
+      -     updatable: false    # this is the default value when not provided and and would only support I(action=get)
+      -   updatable_database:
+      -     location: path of the database
+      -     password: !vault |
+      -         $ANSIBLE_VAULT;1.1;AES256 ...
+      -     keyfile: path to the keyfile
+      -     transformed_key: None
+      -     profile: uncached
+      -     updatable: true    # when explicitly provided as true, the database would support I(action=post), I(action=put) amd I(action=del)
+    type: str
   term:
     description:
       - provided in the format '{{ action }}://{{ path }}?{{ field }}#{{ value }}'
@@ -89,17 +87,6 @@ options:
       - Mutually exclusive with I(term) and I(action=del).
     type: str or json
     version_added: "1.0"
-  check_mode:
-    description:
-      - ensures all operation do not affect the database
-      - If I(action=post) or I(action=put) or I(action=del), operations are performed mocked and not changes are made to the database.
-      - If I(action=get), I(value) is ignored and an exception is raised if the field is none or empty.
-    default: false
-    choices:
-      - false
-      - true
-    type: bool
-    version_added: "1.0"
   fail_silently:
     description:
       - when true, exception raised are muted and returned as part of the result.
@@ -111,6 +98,7 @@ options:
     type: bool
     version_added: "1.0"
 requirements:
+  - jmespath = "*"
   - pykeepass = "*"
 """
 
@@ -187,24 +175,23 @@ stderr:
 class ActionModule(ActionBase):
 
     TRANSFERS_FILES = False
-    _VALID_ARGS = frozenset(("database", "term", "action", "path", "field", "value", "check_mode", "fail_silently"))
-    _search_args = ["action", "path", "field", "value"]
+    _VALID_ARGS = frozenset(("database", "term", "action", "path", "field", "value", "fail_silently"))
+    # _search_args = ["action", "path", "field", "value"]
 
     def run(self, tmp=None, task_vars=None):
+        self._supports_check_mode = True
         super(ActionModule, self).run(tmp, task_vars)
-        display.v(u"keepass: args - %s" % list(({key: value} for key, value in self._task.args.items() if key != "database")))
-        if self._task.args.get("term", None) is not None and len(set(self._search_args).intersection(set(self._task.args.keys()))) > 0:
-            raise AnsibleParserError(AnsibleError(u"'term' is mutually exclusive with %s" % self._search_args))
 
-        database_details = self._task.args.get("database", None)                                                    # type: Optional[dict]
-        key_cache = KeepassKeyCache(task_vars.get('inventory_hostname', None), database_details, display)           # type: KeepassKeyCache
-        query = RequestTerm(display, False, self._task.args["term"]).query if self._task.args.get("term", None) is not None else \
-            RequestQuery(display=display,
+        self._display.v(u"keepass: args - %s" % self._task.args.items())
+        database_details = DatabaseDetails(self._display, **jmespath.search(self._task.args.get("database", None), task_vars).copy())   # type: DatabaseDetails
+        key_cache = KeepassKeyCache(task_vars.get('inventory_hostname', None), database_details, self._display)                         # type: KeepassKeyCache
+        database = KeepassDatabase(database_details, key_cache, self._display)                                                          # type: KeepassDatabase
+        query = RequestTerm(self._display, False, self._task.args["term"]).query if self._task.args.get("term", None) is not None else \
+            RequestQuery(display=self._display,
                          read_only=False,
                          action=self._task.args.get("action", None),
                          path=self._task.args.get("path", None),
                          field=self._task.args.get("field", None),
-                         value=self._task.args.get("value", None))                                                  # type: RequestQuery
+                         value=self._task.args.get("value", None))                                                      # type: RequestQuery
 
-        return KeepassDatabase(database_details, key_cache, display).\
-            execute(query, self._task.args.get("check_mode", False), self._task.args.get("fail_silently", False))   # type: dict
+        return database.execute(query, self._play_context.check_mode, self._task.args.get("fail_silently", False))      # type: dict

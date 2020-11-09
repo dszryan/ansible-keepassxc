@@ -4,10 +4,9 @@ __metaclass__ = type
 
 import base64
 import inspect
-import os
 import traceback
 import uuid
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union
 
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
@@ -17,67 +16,38 @@ from pykeepass.attachment import Attachment
 from pykeepass.entry import Entry
 from pykeepass.group import Group
 
+from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils import RequestQuery, EntryDump, Result
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 
 
 class KeepassDatabase(object):
-    def __init__(self, details: Optional[dict], key_cache: Optional[KeepassKeyCache], display: Display):
+    def __init__(self, details: DatabaseDetails, key_cache: KeepassKeyCache, display: Display):
         self._display = display                                                             # type: Display
-
         self._warnings = []                                                                 # type: List[str]
-        if not KeepassKeyCache.get_secrets(details):
+        if not key_cache or not KeepassKeyCache.get_secrets(details):
             self._warnings.append("Your keepass secrets are in clear text, why use a key store?")
-
         self._database, self._location, self._is_updatable = \
             self._open(details, key_cache, display)                                         # type: [PyKeePass, str, bool]
 
-    # noinspection PyBroadException
     @staticmethod
-    def _open(details: dict, key_cache: KeepassKeyCache, display) -> [PyKeePass, str, bool]:
-        database = None                                                                     # type: Optional[PyKeePass]
-        location = details.get("location", None)                                            # type: Optional[str]
-        keyfile = details.get("keyfile", None)                                              # type: Optional[str]
-        password = details.get("password", None)                                            # type: Optional[str]
-        transformed_key = details.get("transformed_key", None)                              # type: Optional[bytes]
-        updatable = details.get("updatable", False)                                         # type: bool
+    def _open(details: DatabaseDetails, key_cache: KeepassKeyCache, display) -> [PyKeePass, str, bool]:
+        cached_transform_key = key_cache.get() if key_cache else None              # type Optional[bytes]
+        if cached_transform_key:
+            display.vv(u"Keepass: database REOPEN - %s" % details.location)
+            database = PyKeePass(filename=details.location, transformed_key=cached_transform_key)
+        elif details.transformed_key:
+            display.vv(u"Keepass: database QUICK OPEN - %s" % details.location)
+            database = PyKeePass(filename=details.location, transformed_key=details.transformed_key)
+        else:
+            display.vv(u"Keepass: database DEFAULT OPEN - %s" % details.location)
+            database = PyKeePass(filename=details.location, keyfile=details.keyfile, password=details.password)
 
-        # must have validation
-        if not location or not os.path.isfile(os.path.realpath(os.path.expanduser(os.path.expandvars(location)))):
-            raise AnsibleParserError(u"could not find keepass database - %s" % location)
-        location = os.path.realpath(os.path.expanduser(os.path.expandvars(location)))
-        cached_transform_key = key_cache.get() if key_cache and key_cache.is_valid else None   # type Optional[bytes]
-
-        try:
-            if cached_transform_key:
-                display.vv(u"Keepass: database REOPEN - %s" % location)
-                database = PyKeePass(filename=location, transformed_key=cached_transform_key)
-        except Exception:
-            display.vv(u"Keepass: database REOPEN FAILED - Cleared Cache - %s" % location)
-            database = None
-            cached_transform_key = None
-
-        if not database:
-            display.v(u"Keepass: database found - %s" % location)
-
-            if transformed_key:
-                display.vv(u"Keepass: database QUICK OPEN - %s" % location)
-                database = PyKeePass(filename=location, transformed_key=transformed_key)
-            else:
-                if keyfile is not None:
-                    keyfile = os.path.realpath(os.path.expanduser(os.path.expandvars(keyfile)))
-                    if not os.path.isfile(keyfile):
-                        raise AnsibleParserError(u"could not find keyfile - %s" % keyfile)
-                    display.vvv(u"Keepass: keyfile found - %s" % keyfile)
-
-                display.vv(u"Keepass: database DEFAULT OPEN - %s" % location)
-                database = PyKeePass(filename=location, keyfile=keyfile, password=password)
-
-        if key_cache and key_cache.is_valid and not cached_transform_key:
+        if key_cache and key_cache.can_cache and not cached_transform_key:
             key_cache.set(database.transformed_key)
 
-        display.v(u"Keepass: database opened - %s" % location)
-        return database, location, updatable
+        display.v(u"Keepass: database opened - %s" % details.location)
+        return database, details.location, details.updatable
 
     # noinspection PyBroadException
     @staticmethod
@@ -194,7 +164,7 @@ class KeepassDatabase(object):
 
         if result is not None or (not check_mode and query.value is not None):
             self._display.vv(u"KeePass: found property/file on entry - %s" % query)
-            return False, {query.field: (base64.b64encode(result.binary) if hasattr(result, "binary") else result)}
+            return False, {"result": (base64.b64encode(result.binary) if hasattr(result, "binary") else result)}
 
         # throw error, value not found
         raise AttributeError(u"No property/file found")

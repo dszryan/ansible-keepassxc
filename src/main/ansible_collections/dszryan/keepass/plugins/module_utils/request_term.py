@@ -14,6 +14,7 @@ from ansible_collections.dszryan.keepass.plugins.module_utils import RequestQuer
 
 class RequestTerm(object):
 
+    # noinspection RegExpRedundantEscape
     _PATTERN = re.compile(u"(get|put|post|del)?:\\/\\/(((?![#\\?])[\\s\\S])*)(\\?(((?!#)[\\s\\S])*))?(#(.*))?")     # type: re
 
     def __init__(self, display: Display, read_only: bool, term: str):

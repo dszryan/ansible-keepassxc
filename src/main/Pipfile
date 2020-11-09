@@ -4,11 +4,11 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
-pycrunch = "*"
 pycrunch-engine = "*"
 
 [packages]
 ansible = "*"
+jmespath = "*"
 pykeepass = "*"
 
 [requires]
