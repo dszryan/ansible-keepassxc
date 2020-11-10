@@ -5,8 +5,7 @@ __metaclass__ = type
 from typing import Union, List
 
 from ansible.plugins.lookup import LookupBase
-
-from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
+from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery

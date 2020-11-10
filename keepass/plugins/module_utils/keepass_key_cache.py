@@ -11,8 +11,7 @@ from ansible.parsing.vault import VaultLib
 from ansible.plugins.test.core import vault_encrypted
 from ansible.utils.display import Display
 from ansible.vars.fact_cache import FactCache
-
-from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
+from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails
 
 
 class KeepassKeyCache(object):

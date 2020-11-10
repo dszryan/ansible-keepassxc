@@ -11,13 +11,11 @@ from typing import List, Tuple, Union, Optional
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
 from ansible.utils.display import Display
-
-from ansible_collections.dszryan.keepass.plugins import DatabaseDetails, EntryDump, Result
+from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails, EntryDump, Result
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
-
-# noinspection PyBroadException
 from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
 
+# noinspection PyBroadException
 try:
     PYKEEPASS_IMP_ERR = None
     from pykeepass import PyKeePass

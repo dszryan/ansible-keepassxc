@@ -5,11 +5,10 @@ __metaclass__ = type
 import traceback
 
 from ansible.errors import AnsibleParserError, AnsibleError
-
-from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
-from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
+from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
+from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
 
 # noinspection PyBroadException
 try:

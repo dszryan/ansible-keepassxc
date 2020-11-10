@@ -7,8 +7,7 @@ from typing import Union
 from ansible.errors import AnsibleFilterError, AnsibleError
 from ansible.module_utils.common.text.converters import to_native
 from ansible.plugins import display
-
-from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
+from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
