@@ -16,7 +16,7 @@ from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
 
 
 class KeepassKeyCache(object):
-    def __init__(self, hostname: str, details: DatabaseDetails, display: Display):
+    def __init__(self, display: Display, details: DatabaseDetails, hostname: Optional[str]):
         self._hostname = hostname                               # type: Optional[str]
         self._location = details.location                       # type: PathLike
         self._display = display                                 # type: Display

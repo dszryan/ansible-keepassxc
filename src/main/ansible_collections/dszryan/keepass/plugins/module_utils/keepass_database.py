@@ -6,13 +6,18 @@ import base64
 import inspect
 import traceback
 import uuid
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
 from ansible.utils.display import Display
 
+from ansible_collections.dszryan.keepass.plugins import DatabaseDetails, EntryDump, Result
+from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
+
 # noinspection PyBroadException
+from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
+
 try:
     PYKEEPASS_IMP_ERR = None
     from pykeepass import PyKeePass
@@ -23,13 +28,9 @@ except Exception as import_error:
     PYKEEPASS_IMP_ERR = traceback.format_exc()
     PYKEEPASS_IMP_EXP = import_error
 
-from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
-from ansible_collections.dszryan.keepass.plugins.module_utils import RequestQuery, EntryDump, Result
-from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
-
 
 class KeepassDatabase(object):
-    def __init__(self, details: DatabaseDetails, key_cache: KeepassKeyCache, display: Display):
+    def __init__(self, display: Display, details: DatabaseDetails, key_cache: Optional[KeepassKeyCache]):
         if PYKEEPASS_IMP_ERR:
             raise AnsibleParserError(AnsibleError(message=PYKEEPASS_IMP_ERR, orig_exc=PYKEEPASS_IMP_EXP))
 
@@ -38,10 +39,10 @@ class KeepassDatabase(object):
         if not key_cache or not KeepassKeyCache.get_secrets(details):
             self._warnings.append("Your keepass secrets are in clear text, why use a key store?")
         self._database, self._location, self._is_updatable = \
-            self._open(details, key_cache, display)                                         # type: [PyKeePass, str, bool]
+            self._open(display, details, key_cache)  # type: [PyKeePass, str, bool]
 
     @staticmethod
-    def _open(details: DatabaseDetails, key_cache: KeepassKeyCache, display) -> [PyKeePass, str, bool]:
+    def _open(display, details: DatabaseDetails, key_cache: KeepassKeyCache) -> [PyKeePass, str, bool]:
         cached_transform_key = key_cache.get() if key_cache else None              # type Optional[bytes]
         if cached_transform_key:
             display.vv(u"Keepass: database REOPEN - %s" % details.location)
@@ -75,20 +76,26 @@ class KeepassDatabase(object):
         self._database.save()
         self._display.v(u"Keepass: database saved - %s" % self._location)
 
-    def _entry_find(self, query: RequestQuery, ref_uuid=None, not_found_throw=True) -> Union[Entry, None]:
-        entry = self._database.find_entries_by_path(path=query.path, first=True) if ref_uuid is None else self._database.find_entries_by_uuid(uuid=ref_uuid, first=True)
-        if entry is None:
-            self._display.vv(u"KeePass: entry%s NOT found - %s" % ("" if ref_uuid is None else " (and its reference)", query))
+    def _entry_find(self, not_found_throw: bool, **arguments) -> Optional[Entry]:
+        if arguments.get("path", None) is not None:
+            arguments["group"] = self._database.find_groups(path=arguments["path"], first=True)
+            arguments.pop("path")
+
+        self._display.vv(u'KeePass: {"query": %s}' % arguments)
+        find_result = self._database.find_entries(**arguments)
+
+        if find_result is None:
+            self._display.vv(u'KeePass: entry NOT found - {"query": %s}' % arguments)
             if not_found_throw:
                 raise AnsibleError(u"Entry is not found")
             else:
                 return None
-        self._display.vv(u"KeePass: entry%s found - %s" % ("" if ref_uuid is None else " (and its reference)", query))
-        return entry
+        self._display.vv(u'KeePass: entry found - {"query": %s}' % arguments)
+        return find_result
 
     def _entry_upsert(self, query: RequestQuery, check_mode: bool) -> Tuple[bool, dict]:
-        entry = self._entry_find(query, not_found_throw=False)
-        if query.action == "post" and entry is not None:
+        entry = self._entry_find(not_found_throw=False, first=True, **query.arguments)
+        if query.action == "post" and not entry:
             raise AttributeError(u"Invalid request - cannot post/insert when entry exists")
 
         path_split = (entry.path if entry is not None else query.path).rsplit("/", 1)
@@ -151,14 +158,19 @@ class KeepassDatabase(object):
             if not entry_is_created:
                 entry.touch(True)
             self._save()
-            return True, EntryDump(self._entry_find(query)).__dict__
+            return True, EntryDump(self._entry_find(not_found_throw=True, first=True, **query.arguments)).__dict__
         else:
             return (check_mode or entry_is_created or entry_is_updated), (EntryDump(entry).__dict__ if entry is not None else None)
 
-    def get(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
-        entry = self._entry_find(query)
-        if query.field is None:
-            return False, EntryDump(entry).__dict__
+    def get(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, dict]:
+        entry = self._entry_find(not_found_throw=True, **query.arguments)
+        if not query.field:
+            if not entry:
+                return False, {}
+            elif isinstance(entry, list):
+                return False, {"list": list(map(lambda item: EntryDump(item).__dict__, entry))}
+            else:
+                return False, EntryDump(entry).__dict__
 
         # get entry value
         result = getattr(entry, query.field, None) or \
@@ -169,7 +181,7 @@ class KeepassDatabase(object):
         # get reference value
         if query.field in ["title", "username", "password", "url", "notes", "uuid"] and \
                 hasattr(result, "startswith") and result.startswith("{REF:"):
-            entry = self._entry_find(query, uuid.UUID(result.split(":")[2].strip("}")))
+            entry = self._entry_find(not_found_throw=True, first=True, uuid=uuid.UUID(result.split(":")[2].strip("}")))
             result = getattr(entry, query.field, (None if check_mode else query.value))
 
         if result is not None or (not check_mode and query.value is not None):
@@ -179,14 +191,14 @@ class KeepassDatabase(object):
         # throw error, value not found
         raise AttributeError(u"No property/file found")
 
-    def post(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
+    def post(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, dict]:
         return self._entry_upsert(query, check_mode)
 
-    def put(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
+    def put(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, dict]:
         return self._entry_upsert(query, check_mode)
 
-    def delete(self, query: RequestQuery, check_mode=False) -> Tuple[bool, dict]:
-        entry = self._entry_find(query, not_found_throw=True)
+    def delete(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, dict]:
+        entry = self._entry_find(not_found_throw=True, first=True, **query.arguments)
         if query.field is None:
             self._database.delete_entry(entry) and not check_mode
         elif hasattr(entry, query.field):
@@ -201,11 +213,11 @@ class KeepassDatabase(object):
                 raise AttributeError(u"No property/file found")
 
         self._save() and not check_mode
-        return True, (None if query.field is None else EntryDump(self._entry_find(query, not_found_throw=True)).__dict__)
+        return True, (None if query.field is None else EntryDump(self._entry_find(not_found_throw=True, first=True, **query.arguments)).__dict__)
 
-    def execute(self, query: RequestQuery, check_mode: bool, fail_silently: bool) -> dict:
+    def execute(self, query: RequestQuery, check_mode: bool = False, fail_silently: bool = False) -> dict:
         self._display.vvv(u"Keepass: execute - %s" % list(({key: to_native(value)} for key, value in inspect.currentframe().f_locals.items() if key != "self" and not key.startswith("__"))))
-        result = Result(query, self._warnings)
+        result = Result(query.__dict__, self._warnings)
         try:
             if not self._is_updatable and query.action != "get":
                 raise AttributeError(u"Invalid request - database is not 'updatable'")

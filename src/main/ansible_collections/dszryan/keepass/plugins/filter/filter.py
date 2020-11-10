@@ -11,21 +11,7 @@ from ansible.plugins import display
 from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
-from ansible_collections.dszryan.keepass.plugins.module_utils.request_term import RequestTerm
-
-
-def do_lookup(value):
-    try:
-        display.v(u"keepass: lookup %s" % value["lookup"])
-        database_details = DatabaseDetails(display, **value["database"].copy())                                                         # type: DatabaseDetails
-        key_cache = KeepassKeyCache(None, database_details, display)                                                                    # type: KeepassKeyCache
-        storage = KeepassDatabase(database_details, key_cache, display)                                                                 # type: KeepassDatabase
-        outcome = storage.execute(RequestTerm(display, True, value["lookup"]).query, check_mode=False, fail_silently=False)["stdout"]   # type: dict
-        outcome.pop("warnings", None)
-        return next(enumerate(outcome.values()))[1] if "?" in value["lookup"] else outcome                                              # type: Union[str, dict]
-
-    except Exception as error:
-        raise AnsibleFilterError(AnsibleError(message=to_native(error), orig_exc=error))
+from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
 
 
 class FilterModule(object):
@@ -33,5 +19,20 @@ class FilterModule(object):
     # noinspection PyMethodMayBeStatic
     def filters(self):
         return {
-            'lookup': do_lookup
+            'lookup': FilterModule.do_lookup
         }
+
+    @staticmethod
+    def do_lookup(value):
+        try:
+            display.v(u"keepass: lookup %s" % value["lookup"])
+            database_details = DatabaseDetails(display, **value["database"].copy())                 # type: DatabaseDetails
+            key_cache = KeepassKeyCache(display, database_details, None)                            # type: KeepassKeyCache
+            database = KeepassDatabase(display, database_details, key_cache)                        # type: KeepassDatabase
+            query = RequestQuery(display, read_only=True, term=value["lookup"])                     # type: RequestQuery
+            outcome = database.execute(query, check_mode=False, fail_silently=False)["stdout"]      # type: dict
+            outcome.pop("warnings", None)
+            return next(enumerate(outcome.values()))[1] if "?" in value["lookup"] else outcome      # type: Union[str, dict]
+
+        except Exception as error:
+            raise AnsibleFilterError(AnsibleError(message=to_native(error), orig_exc=error))

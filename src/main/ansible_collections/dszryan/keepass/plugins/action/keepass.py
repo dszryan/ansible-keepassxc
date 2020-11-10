@@ -6,6 +6,11 @@ import traceback
 
 from ansible.errors import AnsibleParserError, AnsibleError
 
+from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
+from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
+from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
+from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
+
 # noinspection PyBroadException
 try:
     JMESPATH_IMP_ERR = None
@@ -16,17 +21,13 @@ except Exception as import_error:
 
 from ansible.plugins.action import ActionBase
 
-from ansible_collections.dszryan.keepass.plugins import DatabaseDetails, RequestQuery
-from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
-from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
-from ansible_collections.dszryan.keepass.plugins.module_utils.request_term import RequestTerm
 
 DOCUMENTATION = """
     module: keepass
     short_description: integrates with keepass/keepassxc
     description:
         - provides integration with keepass to read/write entries
-    version_added: "2.4"
+    version_added: "2.10"
     author:
         - develop <develop@local>
     options:
@@ -35,23 +36,23 @@ DOCUMENTATION = """
                 - jmespath that points to a dictionary with the database details (sample below)
                 -
                 - (sample database details definition)
-                - parent_name:
-                -  read_only_database:
-                -    location: path of the database
-                -    password: !vault |
-                -        $ANSIBLE_VAULT;1.1;AES256 ...
-                -    keyfile: path to the keyfile
-                -    transformed_key: None
-                -    profile: throughput
-                -    updatable: false        # this is the default value when not provided and and would only support I(action=get)
-                -  updatable_database:
-                -    location: path of the database
-                -    password: !vault |
-                -        $ANSIBLE_VAULT;1.1;AES256 ...
-                -    keyfile: path to the keyfile
-                -    transformed_key: None
-                -    profile: uncached
-                -    updatable: true        # when explicitly provided as true, the database would support I(action=post), I(action=put) amd I(action=del)
+                - keepass_dbs:
+                -   read_only_database:
+                -     location: path of the database
+                -     password: !vault |
+                -         $ANSIBLE_VAULT;1.1;AES256 ...
+                -     keyfile: path to the keyfile
+                -     transformed_key: None
+                -     profile: throughput
+                -     updatable: false        # this is the default value when not provided and and would only support I(action=get)
+                -   updatable_database:
+                -     location: path of the database
+                -     password: !vault |
+                -         $ANSIBLE_VAULT;1.1;AES256 ...
+                -     keyfile: path to the keyfile
+                -     transformed_key: None
+                -     profile: uncached
+                -     updatable: true        # when explicitly provided as true, the database would support I(action=post), I(action=put) amd I(action=del)
             type: str
         term:
             description:
@@ -115,34 +116,34 @@ DOCUMENTATION = """
 """
 
 EXAMPLES = """
-    - name: dump the whole entity
-        keepass:
-            term: get://path/to/entity   
-            database: read_only_database
-    - name: get only one field and raise an exception if not found
-        keepass:
-            term: get://path/to/entity?field_name
-            database: read_only_database
-    - name: get only one field and return the default value if not found
-        keepass:
-            term: get://path/to/entity?field_name#default_value
-            database: read_only_database
-    - name: insert an entity, throw an exception if value already exists. note json requires " for delimitation and cannot replaced with ' or `
-        keepass:
-            term: post://path/to/entity#{"username": "value", "custom": "value", "attachments": [{"filename": "file content as base64k encoded"}] }
-            database: updatable_database
-    - name: upsert an entity, overwrite if already exists. note json requires " for delimitation and cannot replaced with ' or `
-        keepass:
-            term: put://path/to/entity#{"username": "value", "custom": "value", "attachments": [{"filename": "file content as base64k encoded"}] }
-            database: updatable_database
-    - name: delete an entity. raise an exception if not exists
-        keepass:
-            term: del://path/to/entity
-            database: updatable_database
-    - name: clear a field, raise an exception if the entity does not exists or the field does not exists or has no value
-        keepass:
-            term: del://path/to/entity?field
-            database: updatable_database
+  - name: dump the whole entity
+    keepass:
+      term: get://path/to/entity
+      database: keepass_dbs.read_only_database
+  - name: get only one field and raise an exception if not found
+    keepass:
+      term: get://path/to/entity?field_name
+      database: keepass_dbs.read_only_database
+  - name: get only one field and return the default value if not found
+    keepass:
+      term: get://path/to/entity?field_name#default_value
+      database: keepass_dbs.read_only_database
+  - name: insert an entity, throw an exception if value already exists. note json requires " for delimitation and cannot replaced with ' or `
+    keepass:
+      term: post://path/to/entity#{"username": "value", "custom": "value", "attachments": [{"filename": "file content as base64k encoded"}] }
+      database: keepass_dbs.updatable_database
+  - name: upsert an entity, overwrite if already exists. note json requires " for delimitation and cannot replaced with ' or `
+    keepass:
+      term: put://path/to/entity#{"username": "value", "custom": "value", "attachments": [{"filename": "file content as base64k encoded"}] }
+      database: keepass_dbs.updatable_database
+  - name: delete an entity. raise an exception if not exists
+    keepass:
+      term: del://path/to/entity
+      database: keepass_dbs.updatable_database
+  - name: clear a field, raise an exception if the entity does not exists or the field does not exists or has no value
+    keepass:
+      term: del://path/to/entity?field
+      database: keepass_dbs.updatable_database
 """
 
 RETURN = """
@@ -205,14 +206,14 @@ class ActionModule(ActionBase):
 
         self._display.v(u"keepass: args - %s" % self._task.args.items())
         database_details = DatabaseDetails(self._display, **jmespath.search(self._task.args.get("database", None), task_vars).copy())   # type: DatabaseDetails
-        key_cache = KeepassKeyCache(task_vars.get('inventory_hostname', None), database_details, self._display)                         # type: KeepassKeyCache
-        database = KeepassDatabase(database_details, key_cache, self._display)                                                          # type: KeepassDatabase
-        query = RequestTerm(self._display, False, self._task.args["term"]).query if self._task.args.get("term", None) is not None else \
-            RequestQuery(display=self._display,
-                         read_only=False,
-                         action=self._task.args.get("action", None),
-                         path=self._task.args.get("path", None),
-                         field=self._task.args.get("field", None),
-                         value=self._task.args.get("value", None))                                                      # type: RequestQuery
+        key_cache = KeepassKeyCache(self._display, database_details, task_vars.get('inventory_hostname', None))                         # type: KeepassKeyCache
+        database = KeepassDatabase(self._display, database_details, key_cache)                                                          # type: KeepassDatabase
+        query = RequestQuery(self._display,
+                             read_only=False,
+                             term=self._task.args.get("term", None),
+                             action=self._task.args.get("action", None),
+                             path=self._task.args.get("path", None),
+                             field=self._task.args.get("field", None),
+                             value=self._task.args.get("value", None))                                                                  # type: RequestQuery
 
-        return database.execute(query, self._play_context.check_mode, self._task.args.get("fail_silently", False))      # type: dict
+        return database.execute(query, self._play_context.check_mode, self._task.args.get("fail_silently", False))                      # type: dict
