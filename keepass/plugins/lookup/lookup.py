@@ -2,7 +2,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from typing import Union, List
+from typing import Union, List, AnyStr
 
 from ansible.plugins.lookup import LookupBase
 from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails
@@ -48,7 +48,7 @@ DOCUMENTATION = """
         - to make changes to the keepass database use the action module instead
 """
 
-EXAMPLES = """
+EXAMPLES = r"""
   - name: dump the whole entity
     set_fact:
       keepass: "{{ lookup('dszryan.keepass.lookup', get://path/to/entity, database=parent_name.read_only_database, fail_silently=false) }}"    
@@ -66,11 +66,6 @@ EXAMPLES = """
 
 class LookupModule(LookupBase):
 
-    def _execute(self, database: KeepassDatabase, term: str, fail_silently: bool):
-        query = RequestQuery(self._display, read_only=True, term=term)                                              # type: RequestQuery
-        outcome = database.execute(query, check_mode=False, fail_silently=fail_silently)["stdout"]                  # type: dict
-        return next(enumerate(outcome.values()))[1] if "?" in term and not fail_silently else outcome               # type: Union[str, dict]
-
     def run(self, terms, variables=None, **kwargs):
         self.set_options(var_options=variables, direct=kwargs)
         self._display.v(u"keepass: terms %s" % terms)
@@ -80,4 +75,11 @@ class LookupModule(LookupBase):
         database = KeepassDatabase(self._display, database_details, key_cache)                                      # type: KeepassDatabase
         fail_silently = self.get_option("fail_silently", False)                                                     # type: bool
 
-        return list(map(lambda term: self._execute(database, term, fail_silently), terms))                          # type: List[Union[str, dict]]
+        return list(map(lambda term:
+                        database.execute(
+                            RequestQuery(self._display,
+                                         read_only=True,
+                                         term=term),
+                            check_mode=False,
+                            fail_silently=fail_silently)["stdout"],
+                        terms))                                                                                     # type: List[Union[list, dict, AnyStr, None]]

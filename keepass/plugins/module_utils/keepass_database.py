@@ -6,7 +6,7 @@ import base64
 import inspect
 import traceback
 import uuid
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union, Optional, AnyStr
 
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
@@ -160,13 +160,13 @@ class KeepassDatabase(object):
         else:
             return (check_mode or entry_is_created or entry_is_updated), (EntryDump(entry).__dict__ if entry is not None else None)
 
-    def get(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, dict]:
+    def get(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, Union[list, dict, AnyStr, None]]:
         entry = self._entry_find(not_found_throw=True, **query.arguments)
         if not query.field:
             if not entry:
                 return False, {}
             elif isinstance(entry, list):
-                return False, {"list": list(map(lambda item: EntryDump(item).__dict__, entry))}
+                return False, list(map(lambda item: EntryDump(item).__dict__, entry))
             else:
                 return False, EntryDump(entry).__dict__
 
@@ -184,7 +184,7 @@ class KeepassDatabase(object):
 
         if result is not None or (not check_mode and query.value is not None):
             self._display.vv(u"KeePass: found property/file on entry - %s" % query)
-            return False, {"result": (base64.b64encode(result.binary) if hasattr(result, "binary") else result)}
+            return False, (base64.b64encode(result.binary) if hasattr(result, "binary") else result)
 
         # throw error, value not found
         raise AttributeError(u"No property/file found")

@@ -3,6 +3,7 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import traceback
+from typing import AnyStr
 
 from ansible.errors import AnsibleParserError, AnsibleError
 from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails
@@ -114,38 +115,38 @@ DOCUMENTATION = """
         - pykeepass = "*"
 """
 
-EXAMPLES = """
-  - name: dump the whole entity
-    keepass:
-      term: get://path/to/entity
-      database: keepass_dbs.read_only_database
-  - name: get only one field and raise an exception if not found
-    keepass:
-      term: get://path/to/entity?field_name
-      database: keepass_dbs.read_only_database
-  - name: get only one field and return the default value if not found
-    keepass:
-      term: get://path/to/entity?field_name#default_value
-      database: keepass_dbs.read_only_database
-  - name: insert an entity, throw an exception if value already exists. note json requires " for delimitation and cannot replaced with ' or `
-    keepass:
-      term: post://path/to/entity#{"username": "value", "custom": "value", "attachments": [{"filename": "file content as base64k encoded"}] }
-      database: keepass_dbs.updatable_database
-  - name: upsert an entity, overwrite if already exists. note json requires " for delimitation and cannot replaced with ' or `
-    keepass:
-      term: put://path/to/entity#{"username": "value", "custom": "value", "attachments": [{"filename": "file content as base64k encoded"}] }
-      database: keepass_dbs.updatable_database
-  - name: delete an entity. raise an exception if not exists
-    keepass:
-      term: del://path/to/entity
-      database: keepass_dbs.updatable_database
-  - name: clear a field, raise an exception if the entity does not exists or the field does not exists or has no value
-    keepass:
-      term: del://path/to/entity?field
-      database: keepass_dbs.updatable_database
+EXAMPLES = r"""
+    - name: dump the whole entity
+      keepass:
+        term: get://path/to/entity
+        database: keepass_dbs.read_only_database
+    - name: get only one field and raise an exception if not found
+      keepass:
+        term: get://path/to/entity?field_name
+        database: keepass_dbs.read_only_database
+    - name: get only one field and return the default value if not found
+      keepass:
+        term: get://path/to/entity?field_name#default_value
+        database: keepass_dbs.read_only_database
+    - name: insert an entity, throw an exception if value already exists. note json requires " for delimitation and cannot replaced with ' or `
+      keepass:
+        term: post://path/to/entity#{"username": "value", "custom": "value", "attachments": [{"filename": "file content as base64k encoded"}] }
+        database: keepass_dbs.updatable_database
+    - name: upsert an entity, overwrite if already exists. note json requires " for delimitation and cannot replaced with ' or `
+      keepass:
+        term: put://path/to/entity#{"username": "value", "custom": "value", "attachments": [{"filename": "file content as base64k encoded"}] }
+        database: keepass_dbs.updatable_database
+    - name: delete an entity. raise an exception if not exists
+      keepass:
+        term: del://path/to/entity
+        database: keepass_dbs.updatable_database
+    - name: clear a field, raise an exception if the entity does not exists or the field does not exists or has no value
+      keepass:
+        term: del://path/to/entity?field
+        database: keepass_dbs.updatable_database
 """
 
-RETURN = """
+RETURN = r"""
     query:
         description: the query that was executed
         returned: always
@@ -174,7 +175,7 @@ RETURN = """
     stdout:
         description: dictionary representing the requested data
         returned: success
-        type: dict
+        type: Union[list, dict, AnyStr, None]
     stderr:
         description: exception details, when and exception was raised and fail_silently is set
         returned: not success and I(fail_silently=True)
@@ -215,4 +216,4 @@ class ActionModule(ActionBase):
                              field=self._task.args.get("field", None),
                              value=self._task.args.get("value", None))                                                                  # type: RequestQuery
 
-        return database.execute(query, self._play_context.check_mode, self._task.args.get("fail_silently", False))                      # type: dict
+        return database.execute(query, self._play_context.check_mode, self._task.args.get("fail_silently", False))                      # type: Union[list, dict, AnyStr, None]

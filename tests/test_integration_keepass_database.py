@@ -20,7 +20,7 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 from ansible_collections.dszryan.keepass.plugins import DatabaseDetails
-from ansible_collections.dszryan.keepass.plugins.module_utils import EntryDump, Result, RequestQuery, RequestTerm
+from ansible_collections.dszryan.keepass.plugins.module_utils.common import EntryDump, Result, RequestQuery, RequestTerm
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 

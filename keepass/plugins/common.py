@@ -4,7 +4,7 @@ __metaclass__ = type
 
 import json
 import os
-from typing import Union, Literal, List, Tuple, Optional
+from typing import Union, Literal, List, Tuple, Optional, AnyStr
 
 from ansible.errors import AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
@@ -55,7 +55,7 @@ class Result(object):
         if warnings and len(warnings) > 0:
             self.warnings = warnings
 
-    def success(self, result: Tuple[bool, dict]):
+    def success(self, result: Tuple[bool, Union[list, dict, AnyStr, None]]):
         self.changed = result[0]
         setattr(self, "stdout", result[1])
 

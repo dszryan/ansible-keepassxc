@@ -2,7 +2,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from typing import Union
+from typing import Union, AnyStr
 
 from ansible.errors import AnsibleFilterError, AnsibleError
 from ansible.module_utils.common.text.converters import to_native
@@ -29,9 +29,7 @@ class FilterModule(object):
             key_cache = KeepassKeyCache(display, database_details, None)                            # type: KeepassKeyCache
             database = KeepassDatabase(display, database_details, key_cache)                        # type: KeepassDatabase
             query = RequestQuery(display, read_only=True, term=value["lookup"])                     # type: RequestQuery
-            outcome = database.execute(query, check_mode=False, fail_silently=False)["stdout"]      # type: dict
-            outcome.pop("warnings", None)
-            return next(enumerate(outcome.values()))[1] if "?" in value["lookup"] else outcome      # type: Union[str, dict]
+            return database.execute(query, check_mode=False, fail_silently=False)["stdout"]         # type: Union[dict, AnyStr, None]
 
         except Exception as error:
             raise AnsibleFilterError(AnsibleError(message=to_native(error), orig_exc=error))
