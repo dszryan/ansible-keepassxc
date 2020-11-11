@@ -175,27 +175,36 @@ class KeepassDatabase(object):
         else:
             return (check_mode or entry_is_created or entry_is_updated), None
 
+    def fix_references(self, item: Entry, field_set=None):
+        found_refs = {}
+        for field in (field_set or ["title", "username", "password", "url", "notes"]):
+            field_value = getattr(item, field, None)
+            if hasattr(field_value, "startswith") and field_value.startswith("{REF:"):
+                ref_uuid = uuid.UUID(field_value.split(":")[2].strip("}"))
+                if not found_refs.get(ref_uuid, None):
+                    found_refs[ref_uuid] = self._entry_find(not_found_throw=True, first=True, uuid=ref_uuid)
+                setattr(item, field, getattr(found_refs[ref_uuid], field))
+        return item
+
     def get(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, Union[list, dict, AnyStr, None]]:
         entry = self._entry_find(not_found_throw=True, **query.arguments)
         if not query.field:
             if not entry:
                 return False, {}
             elif isinstance(entry, list):
-                return False, list(map(lambda item: EntryDetails(item, self._key_cache).__dict__, entry))
+                return False, list(map(lambda item: EntryDetails(self.fix_references(item), self._key_cache).__dict__, entry))
             else:
-                return False, EntryDetails(entry, self._key_cache).__dict__
+                return False, EntryDetails(self.fix_references(entry), self._key_cache).__dict__
+
+        # get reference value
+        if query.field in ["title", "username", "password", "url", "notes", "uuid"]:
+            entry = self.fix_references(entry, [query.field])
 
         # get entry value
         result = getattr(entry, query.field, None) or \
                  entry.custom_properties.get(query.field, None) or \
                  ([attachment for index, attachment in enumerate(entry.attachments) if attachment.filename == query.field] or [None])[0] or \
                  (query.value if not check_mode and query.value is not None else None)
-
-        # get reference value
-        if query.field in ["title", "username", "password", "url", "notes", "uuid"] and \
-                hasattr(result, "startswith") and result.startswith("{REF:"):
-            entry = self._entry_find(not_found_throw=True, first=True, uuid=uuid.UUID(result.split(":")[2].strip("}")))
-            result = getattr(entry, query.field, (None if check_mode else query.value))
 
         if result is not None or (not check_mode and query.value is not None):
             self._display.vv(u"KeePass: found property/file on entry - %s" % query)
