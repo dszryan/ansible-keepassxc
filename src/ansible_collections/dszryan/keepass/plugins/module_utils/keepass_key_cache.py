@@ -7,10 +7,8 @@ from os import PathLike
 from typing import Union, Optional, AnyStr
 
 from ansible.module_utils.common.text.converters import to_text
-from ansible.parsing.vault import VaultLib
 from ansible.plugins.test.core import vault_encrypted
 from ansible.utils.display import Display
-from ansible.vars.fact_cache import FactCache
 
 from ansible_collections.dszryan.keepass.plugins.module_utils.database_details import DatabaseDetails
 
@@ -40,6 +38,9 @@ class KeepassKeyCache(object):
     def get(self) -> Optional[bytes]:
         if not self.can_cache:
             return None
+
+        from ansible.parsing.vault import VaultLib
+        from ansible.vars.fact_cache import FactCache
         vault = VaultLib(self._secrets)
         cache = FactCache()
         host_ansible_local = cache.copy().get(self._hostname, {}).get("ansible_local", {}) or {}                                                                    # type: dict
@@ -52,6 +53,8 @@ class KeepassKeyCache(object):
         if not self.can_cache:
             self._display.vv(u"Keepass: transformation cache key CANNOT be set [%s]" % self._location)
         else:
+            from ansible.parsing.vault import VaultLib
+            from ansible.vars.fact_cache import FactCache
             vault = VaultLib(self._secrets)
             cache = FactCache()
             host_facts = cache.copy().get(self._hostname)
@@ -65,7 +68,9 @@ class KeepassKeyCache(object):
             self._display.vv(u"Keepass: transformation cache key was set [%s]" % self._location)
 
     def encrypt(self, plain_text: AnyStr) -> str:
+        from ansible.parsing.vault import VaultLib
         return VaultLib(self._secrets).encrypt(plaintext=plain_text) if self.can_cache else None
 
     def decrypt(self, vault_text: str) -> AnyStr:
+        from ansible.parsing.vault import VaultLib
         return VaultLib(self._secrets).decrypt(vaulttext=vault_text) if self.can_cache else None

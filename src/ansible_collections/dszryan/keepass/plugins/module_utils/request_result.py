@@ -9,10 +9,9 @@ from ansible.module_utils.common.text.converters import to_native
 
 
 class RequestResult(object):
-    changed = False             # type: bool
-    failed = False              # type: bool
-
     def __init__(self, query: dict, warnings: List[str] = None):
+        self.changed = False    # type: bool
+        self.failed = False     # type: bool
         self.query = query      # type: dict
         if warnings:
             self.warnings = warnings

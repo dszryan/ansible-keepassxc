@@ -91,8 +91,8 @@ class KeepassDatabase(object):
             arguments["group"] = self._database.find_groups(path=arguments["path"], first=True)
             arguments.pop("path")
 
-        self._display.vv(u'KeePass: {"query": %s}' % arguments)
-        find_result = self._database.find_entries(**arguments)
+        self._display.vv(u'KeePass: execute query - {"query": %s}' % arguments)
+        find_result = self._database.find_entries(**arguments) if arguments.get("group", None) or arguments.get("uuid", None) else None
 
         if find_result is None:
             self._display.vv(u'KeePass: entry NOT found - {"query": %s}' % arguments)
@@ -104,8 +104,8 @@ class KeepassDatabase(object):
         return find_result
 
     def _entry_upsert(self, query: RequestQuery, check_mode: bool) -> Tuple[bool, Optional[dict]]:
-        entry = self._entry_find(not_found_throw=False, first=True, **query.arguments)
-        if query.action == "post" and not entry:
+        entry = self._entry_find(not_found_throw=False, **query.arguments)
+        if query.action == "post" and entry:
             raise AttributeError(u"Invalid request - cannot post/insert when entry exists")
 
         path_split = (entry.path if entry is not None else query.path).rsplit("/", 1)
@@ -168,7 +168,7 @@ class KeepassDatabase(object):
             if not entry_is_created:
                 entry.touch(True)
             self._save()
-            fetched_entry = self._entry_find(not_found_throw=True, first=True, **query.arguments)
+            fetched_entry = self._entry_find(not_found_throw=True, **query.arguments)
             return True, EntryDetails(fetched_entry, self._key_cache).__dict__
         elif entry:
             return (check_mode or entry_is_created or entry_is_updated), EntryDetails(entry, self._key_cache).__dict__
@@ -211,7 +211,7 @@ class KeepassDatabase(object):
         return self._entry_upsert(query, check_mode)
 
     def delete(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, Optional[dict]]:
-        entry = self._entry_find(not_found_throw=True, first=True, **query.arguments)
+        entry = self._entry_find(not_found_throw=True, **query.arguments)
         if query.field is None:
             self._database.delete_entry(entry) and not check_mode
         elif hasattr(entry, query.field):
@@ -228,7 +228,7 @@ class KeepassDatabase(object):
         if not check_mode:
             self._save()
         if query.field:
-            found_entry = self._entry_find(not_found_throw=True, first=True, **query.arguments)
+            found_entry = self._entry_find(not_found_throw=True, **query.arguments)
             return True, EntryDetails(found_entry, self._key_cache).__dict__
         else:
             return True, None
