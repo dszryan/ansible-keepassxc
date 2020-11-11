@@ -7,7 +7,7 @@ import inspect
 import traceback
 import uuid
 from os import PathLike
-from typing import List, Tuple, Union, Optional, AnyStr
+from typing import AnyStr, List, Optional, Tuple, Union
 
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
@@ -25,6 +25,7 @@ try:
     from pykeepass import PyKeePass
     from pykeepass.attachment import Attachment
     from pykeepass.entry import Entry
+    from pykeepass.exceptions import CredentialsError
     from pykeepass.group import Group
 except Exception as import_error:
     PYKEEPASS_IMP_ERR = traceback.format_exc()
@@ -47,25 +48,31 @@ class KeepassDatabase(object):
         self._database, self._location, self._is_updatable = self._open(details, key_cache)
 
     def _open(self, details: DatabaseDetails, key_cache: KeepassKeyCache) -> Tuple[PyKeePass, PathLike, bool]:
-        cached_transform_key = None
+        database, cached_transform_key = None, None
         if key_cache:
             if not key_cache.has_secrets:
                 self._warnings.append("Your keepass secrets are in clear text, why use a key store?")
             elif key_cache.can_cache:
                 cached_transform_key = key_cache.get()                          # type Optional[bytes]
 
-        if cached_transform_key:
-            self._display.vv(u"Keepass: database REOPEN - %s" % details.location)
-            database = PyKeePass(filename=details.location, transformed_key=cached_transform_key)
-        elif details.transformed_key:
-            self._display.vv(u"Keepass: database QUICK OPEN - %s" % details.location)
-            database = PyKeePass(filename=details.location, transformed_key=details.transformed_key)
-        else:
-            self._display.vv(u"Keepass: database DEFAULT OPEN - %s" % details.location)
-            database = PyKeePass(filename=details.location, keyfile=details.keyfile, password=details.password)
+        try:
+            if cached_transform_key:
+                self._display.vv(u"Keepass: database REOPEN - %s" % details.location)
+                database = PyKeePass(filename=details.location, transformed_key=cached_transform_key)
+        except CredentialsError:
+            self._display.vv(u"Keepass: database REOPEN FAILED - Cleared Cache - %s" % details.location)
+            cached_transform_key = None
 
-        if key_cache and key_cache.can_cache and not cached_transform_key:
-            key_cache.set(database.transformed_key)
+        if not database:
+            if details.transformed_key:
+                self._display.vv(u"Keepass: database QUICK OPEN - %s" % details.location)
+                database = PyKeePass(filename=details.location, transformed_key=details.transformed_key)
+            else:
+                self._display.vv(u"Keepass: database DEFAULT OPEN - %s" % details.location)
+                database = PyKeePass(filename=details.location, keyfile=details.keyfile, password=details.password)
+
+            if key_cache and key_cache.can_cache and not cached_transform_key:
+                key_cache.set(database.transformed_key)
 
         self._display.v(u"Keepass: database opened - %s" % details.location)
         return database, details.location, details.updatable
