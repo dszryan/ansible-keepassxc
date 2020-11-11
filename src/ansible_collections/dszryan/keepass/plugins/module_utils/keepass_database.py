@@ -6,14 +6,18 @@ import base64
 import inspect
 import traceback
 import uuid
+from os import PathLike
 from typing import List, Tuple, Union, Optional, AnyStr
 
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.module_utils.common.text.converters import to_native
 from ansible.utils.display import Display
-from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails, EntryDump, Result
+
+from ansible_collections.dszryan.keepass.plugins.module_utils.database_details import DatabaseDetails
+from ansible_collections.dszryan.keepass.plugins.module_utils.entry_details import EntryDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
+from ansible_collections.dszryan.keepass.plugins.module_utils.request_result import RequestResult
 
 # noinspection PyBroadException
 try:
@@ -28,34 +32,42 @@ except Exception as import_error:
 
 
 class KeepassDatabase(object):
+    _warnings = []           # type: List
+    _display: Display
+    _key_cache: Optional[KeepassKeyCache]
+    _database: PyKeePass
+    _location: PathLike
+    _is_updatable: bool
+
     def __init__(self, display: Display, details: DatabaseDetails, key_cache: Optional[KeepassKeyCache]):
         if PYKEEPASS_IMP_ERR:
             raise AnsibleParserError(AnsibleError(message=PYKEEPASS_IMP_ERR, orig_exc=PYKEEPASS_IMP_EXP))
+        self._display = display
+        self._key_cache = key_cache
+        self._database, self._location, self._is_updatable = self._open(details, key_cache)
 
-        self._display = display                                                             # type: Display
-        self._warnings = []                                                                 # type: List[str]
-        if not key_cache or not KeepassKeyCache.get_secrets(details):
-            self._warnings.append("Your keepass secrets are in clear text, why use a key store?")
-        self._database, self._location, self._is_updatable = \
-            self._open(display, details, key_cache)  # type: [PyKeePass, str, bool]
+    def _open(self, details: DatabaseDetails, key_cache: KeepassKeyCache) -> Tuple[PyKeePass, PathLike, bool]:
+        cached_transform_key = None
+        if key_cache:
+            if not key_cache.has_secrets:
+                self._warnings.append("Your keepass secrets are in clear text, why use a key store?")
+            elif key_cache.can_cache:
+                cached_transform_key = key_cache.get()                          # type Optional[bytes]
 
-    @staticmethod
-    def _open(display, details: DatabaseDetails, key_cache: KeepassKeyCache) -> [PyKeePass, str, bool]:
-        cached_transform_key = key_cache.get() if key_cache else None              # type Optional[bytes]
         if cached_transform_key:
-            display.vv(u"Keepass: database REOPEN - %s" % details.location)
+            self._display.vv(u"Keepass: database REOPEN - %s" % details.location)
             database = PyKeePass(filename=details.location, transformed_key=cached_transform_key)
         elif details.transformed_key:
-            display.vv(u"Keepass: database QUICK OPEN - %s" % details.location)
+            self._display.vv(u"Keepass: database QUICK OPEN - %s" % details.location)
             database = PyKeePass(filename=details.location, transformed_key=details.transformed_key)
         else:
-            display.vv(u"Keepass: database DEFAULT OPEN - %s" % details.location)
+            self._display.vv(u"Keepass: database DEFAULT OPEN - %s" % details.location)
             database = PyKeePass(filename=details.location, keyfile=details.keyfile, password=details.password)
 
         if key_cache and key_cache.can_cache and not cached_transform_key:
             key_cache.set(database.transformed_key)
 
-        display.v(u"Keepass: database opened - %s" % details.location)
+        self._display.v(u"Keepass: database opened - %s" % details.location)
         return database, details.location, details.updatable
 
     # noinspection PyBroadException
@@ -91,7 +103,7 @@ class KeepassDatabase(object):
         self._display.vv(u'KeePass: entry found - {"query": %s}' % arguments)
         return find_result
 
-    def _entry_upsert(self, query: RequestQuery, check_mode: bool) -> Tuple[bool, dict]:
+    def _entry_upsert(self, query: RequestQuery, check_mode: bool) -> Tuple[bool, Optional[dict]]:
         entry = self._entry_find(not_found_throw=False, first=True, **query.arguments)
         if query.action == "post" and not entry:
             raise AttributeError(u"Invalid request - cannot post/insert when entry exists")
@@ -156,9 +168,12 @@ class KeepassDatabase(object):
             if not entry_is_created:
                 entry.touch(True)
             self._save()
-            return True, EntryDump(self._entry_find(not_found_throw=True, first=True, **query.arguments)).__dict__
+            fetched_entry = self._entry_find(not_found_throw=True, first=True, **query.arguments)
+            return True, EntryDetails(fetched_entry, self._key_cache).__dict__
+        elif entry:
+            return (check_mode or entry_is_created or entry_is_updated), EntryDetails(entry, self._key_cache).__dict__
         else:
-            return (check_mode or entry_is_created or entry_is_updated), (EntryDump(entry).__dict__ if entry is not None else None)
+            return (check_mode or entry_is_created or entry_is_updated), None
 
     def get(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, Union[list, dict, AnyStr, None]]:
         entry = self._entry_find(not_found_throw=True, **query.arguments)
@@ -166,9 +181,9 @@ class KeepassDatabase(object):
             if not entry:
                 return False, {}
             elif isinstance(entry, list):
-                return False, list(map(lambda item: EntryDump(item).__dict__, entry))
+                return False, list(map(lambda item: EntryDetails(item, self._key_cache).__dict__, entry))
             else:
-                return False, EntryDump(entry).__dict__
+                return False, EntryDetails(entry, self._key_cache).__dict__
 
         # get entry value
         result = getattr(entry, query.field, None) or \
@@ -195,7 +210,7 @@ class KeepassDatabase(object):
     def put(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, dict]:
         return self._entry_upsert(query, check_mode)
 
-    def delete(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, dict]:
+    def delete(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, Optional[dict]]:
         entry = self._entry_find(not_found_throw=True, first=True, **query.arguments)
         if query.field is None:
             self._database.delete_entry(entry) and not check_mode
@@ -210,12 +225,17 @@ class KeepassDatabase(object):
             else:
                 raise AttributeError(u"No property/file found")
 
-        self._save() and not check_mode
-        return True, (None if query.field is None else EntryDump(self._entry_find(not_found_throw=True, first=True, **query.arguments)).__dict__)
+        if not check_mode:
+            self._save()
+        if query.field:
+            found_entry = self._entry_find(not_found_throw=True, first=True, **query.arguments)
+            return True, EntryDetails(found_entry, self._key_cache).__dict__
+        else:
+            return True, None
 
     def execute(self, query: RequestQuery, check_mode: bool = False, fail_silently: bool = False) -> dict:
         self._display.vvv(u"Keepass: execute - %s" % list(({key: to_native(value)} for key, value in inspect.currentframe().f_locals.items() if key != "self" and not key.startswith("__"))))
-        result = Result(query.__dict__, self._warnings)
+        result = RequestResult(query.__dict__, self._warnings)
         try:
             if not self._is_updatable and query.action != "get":
                 raise AttributeError(u"Invalid request - database is not 'updatable'")

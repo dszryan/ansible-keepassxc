@@ -4,14 +4,15 @@ __metaclass__ = type
 
 import base64
 from os import PathLike
-from typing import Union, Optional
+from typing import Union, Optional, AnyStr
 
 from ansible.module_utils.common.text.converters import to_text
 from ansible.parsing.vault import VaultLib
 from ansible.plugins.test.core import vault_encrypted
 from ansible.utils.display import Display
 from ansible.vars.fact_cache import FactCache
-from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails
+
+from ansible_collections.dszryan.keepass.plugins.module_utils.database_details import DatabaseDetails
 
 
 class KeepassKeyCache(object):
@@ -20,7 +21,8 @@ class KeepassKeyCache(object):
         self._location = details.location                       # type: PathLike
         self._display = display                                 # type: Display
         self._secrets = KeepassKeyCache.get_secrets(details)    # type: Optional[bytes]
-        self.can_cache = self._hostname and not self._hostname.isspace() and self._secrets and details.profile == "throughput"
+        self.has_secrets = True if self._secrets else False
+        self.can_cache = self._hostname and not self._hostname.isspace() and self.has_secrets and details.profile == "throughput"
         self._display.vv(u"Keepass: transformation caching is%s possible [%s]" % (("" if self.can_cache else " not"), details.location))
 
     @staticmethod
@@ -61,3 +63,9 @@ class KeepassKeyCache(object):
             host_facts["ansible_local"] = host_ansible_local
             cache.update({self._hostname: host_facts})
             self._display.vv(u"Keepass: transformation cache key was set [%s]" % self._location)
+
+    def encrypt(self, plain_text: AnyStr) -> str:
+        return VaultLib(self._secrets).encrypt(plaintext=plain_text) if self.can_cache else None
+
+    def decrypt(self, vault_text: str) -> AnyStr:
+        return VaultLib(self._secrets).decrypt(vaulttext=vault_text) if self.can_cache else None

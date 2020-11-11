@@ -3,10 +3,11 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import traceback
-from typing import AnyStr
+from typing import AnyStr, Union
 
 from ansible.errors import AnsibleParserError, AnsibleError
-from ansible_collections.dszryan.keepass.plugins.common import DatabaseDetails
+
+from ansible_collections.dszryan.keepass.plugins.module_utils.database_details import DatabaseDetails
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_database import KeepassDatabase
 from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
 from ansible_collections.dszryan.keepass.plugins.module_utils.request_query import RequestQuery
