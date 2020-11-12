@@ -212,7 +212,7 @@ class KeepassDatabase(object):
                 if KeepassDatabase._REF_MAP[field_match.group("field_key")] == "password" and field_name != "password":
                     ref_value = self._key_cache.encrypt(ref_value) if self._key_cache else None
                 if field.startswith("custom_properties."):
-                    item.set_custom_property(field_name, to_text(ref_value))
+                    item.set_custom_property(field_name, to_native(ref_value))
                 else:
                     setattr(item, field_name, ref_value)
         return item

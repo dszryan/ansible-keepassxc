@@ -69,8 +69,8 @@ class KeepassKeyCache(object):
 
     def encrypt(self, plain_text: AnyStr) -> str:
         from ansible.parsing.vault import VaultLib
-        return VaultLib(self._secrets).encrypt(plaintext=plain_text) if self.can_cache else None
+        return "vault! | \\n\\t\\t\\t" + VaultLib(self._secrets).encrypt(plaintext=plain_text).decode().replace("\n", "\\n\\t\\t\\t").strip("\\t") if self.can_cache else None
 
-    def decrypt(self, vault_text: str) -> AnyStr:
-        from ansible.parsing.vault import VaultLib
-        return VaultLib(self._secrets).decrypt(vaulttext=vault_text) if self.can_cache else None
+    # def decrypt(self, vault_text: str) -> AnyStr:
+    #     from ansible.parsing.vault import VaultLib
+    #     return VaultLib(self._secrets).decrypt(vaulttext=vault_text) if self.can_cache else None
