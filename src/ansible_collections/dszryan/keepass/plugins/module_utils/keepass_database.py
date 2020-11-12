@@ -4,13 +4,14 @@ __metaclass__ = type
 
 import base64
 import inspect
+import re
 import traceback
 import uuid
 from os import PathLike
 from typing import AnyStr, List, Optional, Tuple, Union
 
 from ansible.errors import AnsibleError, AnsibleParserError
-from ansible.module_utils.common.text.converters import to_native
+from ansible.module_utils.common.text.converters import to_native, to_text
 from ansible.utils.display import Display
 
 from ansible_collections.dszryan.keepass.plugins.module_utils.database_details import DatabaseDetails
@@ -33,6 +34,18 @@ except Exception as import_error:
 
 
 class KeepassDatabase(object):
+    _REF_MAP = {
+        "T": "title",
+        "U": "username",
+        "P": "password",
+        "A": "url",
+        "N": "notes",
+        "I": "UUID",
+
+    }
+    # noinspection RegExpRedundantEscape
+    _REF_PATTERN = re.compile("\\{REF:(?P<field_key>[" + "".join(_REF_MAP.keys()) + "])@I:(?P<ref_id>\\w*)\\}")
+
     _warnings = []           # type: List
     _display: Display
     _key_cache: Optional[KeepassKeyCache]
@@ -182,15 +195,26 @@ class KeepassDatabase(object):
         else:
             return (check_mode or entry_is_created or entry_is_updated), None
 
-    def fix_references(self, item: Entry, field_set=None):
+    def _fix_references(self, item: Entry, field_set=None):
         found_refs = {}
-        for field in (field_set or ["title", "username", "password", "url", "notes"]):
-            field_value = getattr(item, field, None)
-            if hasattr(field_value, "startswith") and field_value.startswith("{REF:"):
-                ref_uuid = uuid.UUID(field_value.split(":")[2].strip("}"))
+        for field in (field_set or
+                      (["title", "username", "password", "url", "notes"] +
+                       list(map(lambda k: "custom_properties." + k, item.custom_properties.keys())))):
+            field_name = "".join(field.split(".")[1]) if field.startswith("custom_properties.") else field
+            field_value = item.custom_properties.get(field_name, None) \
+                if field.startswith("custom_properties.") else getattr(item, field_name, None)
+            field_match = KeepassDatabase._REF_PATTERN.search(field_value) if field_value else None
+            if field_match and field_match.group("field_key") and field_match.group("ref_id"):
+                ref_uuid = uuid.UUID(field_match.group("ref_id"))
                 if not found_refs.get(ref_uuid, None):
                     found_refs[ref_uuid] = self._entry_find(not_found_throw=True, first=True, uuid=ref_uuid)
-                setattr(item, field, getattr(found_refs[ref_uuid], field))
+                ref_value = getattr(found_refs[ref_uuid], KeepassDatabase._REF_MAP[field_match.group("field_key")])
+                if KeepassDatabase._REF_MAP[field_match.group("field_key")] == "password" and field_name != "password":
+                    ref_value = self._key_cache.encrypt(ref_value) if self._key_cache else None
+                if field.startswith("custom_properties."):
+                    item.set_custom_property(field_name, to_text(ref_value))
+                else:
+                    setattr(item, field_name, ref_value)
         return item
 
     def get(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, Union[list, dict, AnyStr, None]]:
@@ -199,13 +223,13 @@ class KeepassDatabase(object):
             if not entry:
                 return False, {}
             elif isinstance(entry, list):
-                return False, list(map(lambda item: EntryDetails(self.fix_references(item), self._key_cache).__dict__, entry))
+                return False, list(map(lambda item: EntryDetails(self._fix_references(item), self._key_cache).__dict__, entry))
             else:
-                return False, EntryDetails(self.fix_references(entry), self._key_cache).__dict__
+                return False, EntryDetails(self._fix_references(entry), self._key_cache).__dict__
 
         # get reference value
         if query.field in ["title", "username", "password", "url", "notes", "uuid"]:
-            entry = self.fix_references(entry, [query.field])
+            entry = self._fix_references(entry, [query.field])
 
         # get entry value
         result = getattr(entry, query.field, None) or \
