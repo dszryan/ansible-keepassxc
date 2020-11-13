@@ -82,5 +82,5 @@ class LookupModule(LookupBase):
                                          read_only=True,
                                          term=term),
                             check_mode=False,
-                            fail_silently=fail_silently)["stdout"],
+                            fail_silently=fail_silently).get("stdout", None),
                         terms))                                                                                     # type: List[Union[list, dict, AnyStr, None]]

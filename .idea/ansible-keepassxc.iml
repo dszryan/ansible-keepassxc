@@ -3,8 +3,8 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/src/ansible_collections/dszryan/keepass/collection" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.idea/sonarlint" />
+      <excludeFolder url="file://$MODULE_DIR$/src/ansible_collections/dszryan/keepass/collection" />
       <excludeFolder url="file://$MODULE_DIR$/tests/.pytest_cache" />
     </content>
     <orderEntry type="inheritedJdk" />
@@ -20,8 +20,5 @@
         <option value="$MODULE_DIR$/src/ansible_collections/dszryan/keepass/templates" />
       </list>
     </option>
-  </component>
-  <component name="TestRunnerService">
-    <option name="PROJECT_TEST_RUNNER" value="pytest" />
   </component>
 </module>

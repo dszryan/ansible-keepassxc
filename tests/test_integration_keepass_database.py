@@ -53,7 +53,7 @@ class TestStorage(TestCase):
             "title": "test",
             "path": "one/two",
             "username": "test_username",
-            "password": None,
+            "password": "test_password",
             "url": "test_url",
             "notes": "test_notes",
             "custom_properties": {
@@ -83,7 +83,7 @@ class TestStorage(TestCase):
 
         self._search_path_valid = RequestQuery(self._display, True, term="get://one/two/test")
         self._search_path_invalid = RequestQuery(self._display, True, term="get://one/two/new")
-        self._clone_entry = dict(self._database_entry, title="clone", username="{REF:U@I:9366B38F2EE9412FA6BAB2AB10D1F100}", password="{REF:P@I:9366B38F2EE9412FA6BAB2AB10D1F100}", attachments=[])
+        self._clone_entry = dict(self._database_entry, title="clone", attachments=[])
         self._post_path_invalid = RequestQuery(self._display, False, term="post://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
         self._noop_path_valid = RequestQuery(self._display, False, term="put://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
         self._update_entry_value = {
@@ -101,7 +101,7 @@ class TestStorage(TestCase):
                 {"filename": "scratch.keyfile", "length": 18}
             ]
         }
-        self._update_path_valid = RequestQuery(self._display, False, term='put://one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "scratch.keyfile", "binary": "this is a new file"}]}')
+        self._update_path_valid = RequestQuery(self._display, False, term='put://one/two/test#{"url": "url_updated", "custom_properties": {"test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value"}, "attachments": [{"filename": "scratch.keyfile", "binary": "this is a new file"}]}')
         self._insert_entry_value = {
             "title": "test",
             "path": "new_path/one/two",
@@ -117,7 +117,7 @@ class TestStorage(TestCase):
                 {"filename": "new_file", "length": 18}
             ]
         }
-        self._insert_path_valid = RequestQuery(self._display, False, term='post://new_path/one/two/test#{"url": "url_updated", "test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value", "attachments": [{"filename": "new_file", "binary": "this is a new file"}]}')
+        self._insert_path_valid = RequestQuery(self._display, False, term='post://new_path/one/two/test#{"url": "url_updated", "custom_properties": {"test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value"}, "attachments": [{"filename": "new_file", "binary": "this is a new file"}]}')
         self._display.reset_mock()
 
     def tearDown(self) -> None:
@@ -185,8 +185,8 @@ class TestStorage(TestCase):
 
     def test__entry_find_valid_by_path(self):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
-        actual_entry = storage._entry_find(not_found_throw=True, **self._search_path_valid.arguments)
-        self.assertDictEqual(self._database_entry, EntryDetails(actual_entry, None).__dict__)
+        actual_entry = storage._entry_find(not_found_throw=True, mask_password=True, **self._search_path_valid.arguments)
+        self.assertDictEqual(dict(self._database_entry, password=None), EntryDetails(actual_entry, None).__dict__)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -194,8 +194,8 @@ class TestStorage(TestCase):
 
     def test__entry_find_valid_by_uuid(self):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
-        actual_entry = storage._entry_find(not_found_throw=True, first=True, uuid=self._database_entry_uuid_valid)
-        self.assertEqual(self._database_entry, EntryDetails(actual_entry, None).__dict__)
+        actual_entry = storage._entry_find(not_found_throw=True, mask_password=True, first=True, uuid=self._database_entry_uuid_valid)
+        self.assertEqual(dict(self._database_entry, password=None), EntryDetails(actual_entry, None).__dict__)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -203,7 +203,7 @@ class TestStorage(TestCase):
 
     def test__entry_find_invalid_by_path_no_error(self):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
-        actual_entry = storage._entry_find(not_found_throw=False, first=True, uuid=self._database_entry_uuid_invalid)
+        actual_entry = storage._entry_find(not_found_throw=False, mask_password=True, first=True, uuid=self._database_entry_uuid_invalid)
         self.assertEqual(None, actual_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
@@ -212,7 +212,7 @@ class TestStorage(TestCase):
 
     def test__entry_find_invalid_entry_raise_error(self):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
-        self.assertRaises(AnsibleError, storage._entry_find, not_found_throw=True, first=True, uuid=self._database_entry_uuid_invalid)
+        self.assertRaises(AnsibleError, storage._entry_find, mask_password=True, not_found_throw=True, first=True, uuid=self._database_entry_uuid_invalid)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -264,7 +264,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
         has_changed, actual_entry = storage.get(self._search_path_valid, check_mode=False)
         self.assertFalse(has_changed)
-        self.assertDictEqual(self._database_entry, actual_entry)
+        self.assertDictEqual(dict(self._database_entry, password=None), actual_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -346,7 +346,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete, None)
         has_changed, deleted_entry = storage.delete(self._delete_custom, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._database_entry, custom_properties={}), deleted_entry)
+        self.assertDictEqual(dict(self._database_entry, password=None, custom_properties={}), deleted_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)
@@ -357,7 +357,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete, None)
         has_changed, deleted_entry = storage.delete(self._delete_file, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._database_entry, attachments=[]), deleted_entry)
+        self.assertDictEqual(dict(self._database_entry, password=None, attachments=[]), deleted_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)
@@ -398,7 +398,7 @@ class TestStorage(TestCase):
         self.assertFalse(actual["changed"])
         self.assertFalse(actual["failed"])
         self.assertDictEqual(self._search_path_valid.__dict__, actual["query"])
-        self.assertDictEqual(self._database_entry, actual["stdout"])
+        self.assertDictEqual(dict(self._database_entry, password=None), actual["stdout"])
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)

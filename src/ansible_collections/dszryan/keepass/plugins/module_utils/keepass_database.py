@@ -11,7 +11,7 @@ from os import PathLike
 from typing import AnyStr, List, Optional, Tuple, Union
 
 from ansible.errors import AnsibleError, AnsibleParserError
-from ansible.module_utils.common.text.converters import to_native, to_text
+from ansible.module_utils.common.text.converters import to_native
 from ansible.utils.display import Display
 
 from ansible_collections.dszryan.keepass.plugins.module_utils.database_details import DatabaseDetails
@@ -56,6 +56,7 @@ class KeepassDatabase(object):
     def __init__(self, display: Display, details: DatabaseDetails, key_cache: Optional[KeepassKeyCache]):
         if PYKEEPASS_IMP_ERR:
             raise AnsibleParserError(AnsibleError(message=PYKEEPASS_IMP_ERR, orig_exc=PYKEEPASS_IMP_EXP))
+        self._found_refs = {}
         self._display = display
         self._key_cache = key_cache
         self._database, self._location, self._is_updatable = self._open(details, key_cache)
@@ -106,25 +107,66 @@ class KeepassDatabase(object):
         self._database.save()
         self._display.v(u"Keepass: database saved - %s" % self._location)
 
-    def _entry_find(self, not_found_throw: bool, **arguments) -> Optional[Entry]:
+    def _dereference(self, field, field_value, mask_password):
+        field_match = KeepassDatabase._REF_PATTERN.search(field_value) if field_value else None
+        if field_match and field_match.group("field_key") and field_match.group("ref_id"):
+            ref_field = field_match.group("field_key")
+            ref_uuid = uuid.UUID(field_match.group("ref_id"))
+            if not self._found_refs.get(ref_uuid, None):
+                self._found_refs[ref_uuid] = self._entry_find(not_found_throw=True, mask_password=mask_password, first=True, uuid=ref_uuid)
+
+            if ref_field == "I":
+                ref_value = self._fix_references(self._found_refs[ref_uuid], mask_password)
+                if field == "title":  # NB: workaround for keepassxc, since its ui does not support whole entry reference
+                    return ref_value
+            else:
+                ref_value = getattr(self._found_refs[ref_uuid], KeepassDatabase._REF_MAP[ref_field])
+
+            if ref_field == "P" and mask_password and ref_value:
+                ref_value = self._key_cache.encrypt(ref_value) if self._key_cache else "PASSWORD_VALUE_CLEARED"
+
+            return ref_value
+        else:
+            return field_value
+
+    def _fix_references(self, item: Entry, mask_password, field_set=None) -> Entry:
+        for field in (field_set or
+                      (["title", "username", "password", "url", "notes"] +
+                       list(map(lambda k: "custom_properties." + k, item.custom_properties.keys())))):
+            field_name = ".".join(field.split(".")[1:]) if field.startswith("custom_properties.") else field
+            field_value = item.custom_properties.get(field_name, None) \
+                if field.startswith("custom_properties.") else getattr(item, field_name, None)
+            ref_value = self._dereference(field, field_value, mask_password)
+            if ref_value != field_value:
+                if field.startswith("custom_properties."):
+                    item.set_custom_property(field_name, to_native(ref_value))
+                else:
+                    setattr(item, field_name, ref_value)
+        return item
+
+    def _entry_find(self, not_found_throw: bool, mask_password: bool, **arguments) -> Union[List[Entry], Entry, None]:
         if arguments.get("path", None) is not None:
             arguments["group"] = self._database.find_groups(path=arguments["path"], first=True)
             arguments.pop("path")
 
         self._display.vv(u'KeePass: execute query - {"query": %s}' % arguments)
-        find_result = self._database.find_entries(**arguments) if arguments.get("group", None) or arguments.get("uuid", None) else None
+        find_result = self._database.find_entries(**arguments) if arguments.get("group", None) or arguments.get("uuid", None) else None     # type: Union[List[Entry], Entry, None]
 
-        if find_result is None:
+        if not find_result:
             self._display.vv(u'KeePass: entry NOT found - {"query": %s}' % arguments)
             if not_found_throw:
                 raise AnsibleError(u"Entry is not found")
             else:
                 return None
-        self._display.vv(u'KeePass: entry found - {"query": %s}' % arguments)
-        return find_result
+        else:
+            self._display.vv(u'KeePass: entry found - {"query": %s}' % arguments)
+            if isinstance(find_result, list):
+                return list(map(lambda item: self._fix_references(item, mask_password), find_result))
+            else:
+                return self._fix_references(find_result, mask_password)
 
     def _entry_upsert(self, query: RequestQuery, check_mode: bool) -> Tuple[bool, Optional[dict]]:
-        entry = self._entry_find(not_found_throw=False, **query.arguments)
+        entry = self._entry_find(not_found_throw=False, mask_password=False, **query.arguments)
         if query.action == "post" and entry:
             raise AttributeError(u"Invalid request - cannot post/insert when entry exists")
 
@@ -172,64 +214,45 @@ class KeepassDatabase(object):
                                 self._database.delete_binary(entry_attachment_item.id)
                             entry.add_attachment(self._database.add_binary(binary), filename)
                             entry_is_updated = True
+                elif key == "custom_properties":
+                    for item in value.items():
+                        cp_key = item[0]
+                        cp_value = self._dereference(None, item[1], False)
+                        if cp_key not in entry.custom_properties.keys() or entry.custom_properties.get(cp_key, None) != cp_value:
+                            if not (entry_is_updated or entry_is_created):
+                                entry.save_history()
+                            entry.set_custom_property(cp_key, cp_value)
+                            entry_is_updated = True
                 elif hasattr(entry, key):
+                    value = self._dereference(None, value, False)
                     if getattr(entry, key, None) != value or (key in ["username", "password"] and getattr(entry, key, "") != ("" if value is None else value)):
                         if not (entry_is_updated or entry_is_created):
                             entry.save_history()
                         setattr(entry, key, value)
                         entry_is_updated = True
-                elif key not in entry.custom_properties.keys() or entry.custom_properties.get(key, None) != value:
-                    if not (entry_is_updated or entry_is_created):
-                        entry.save_history()
-                    entry.set_custom_property(key, value)
-                    entry_is_updated = True
+                else:
+                    raise AnsibleParserError(AnsibleError("unknown value provided %s" % key))
 
         if not check_mode and (entry_is_created or entry_is_updated):
             if not entry_is_created:
                 entry.touch(True)
             self._save()
-            fetched_entry = self._entry_find(not_found_throw=True, **query.arguments)
+            fetched_entry = self._entry_find(not_found_throw=True, mask_password=True, **query.arguments)
             return True, EntryDetails(fetched_entry, self._key_cache).__dict__
         elif entry:
             return (check_mode or entry_is_created or entry_is_updated), EntryDetails(entry, self._key_cache).__dict__
         else:
             return (check_mode or entry_is_created or entry_is_updated), None
 
-    def _fix_references(self, item: Entry, field_set=None):
-        found_refs = {}
-        for field in (field_set or
-                      (["title", "username", "password", "url", "notes"] +
-                       list(map(lambda k: "custom_properties." + k, item.custom_properties.keys())))):
-            field_name = "".join(field.split(".")[1]) if field.startswith("custom_properties.") else field
-            field_value = item.custom_properties.get(field_name, None) \
-                if field.startswith("custom_properties.") else getattr(item, field_name, None)
-            field_match = KeepassDatabase._REF_PATTERN.search(field_value) if field_value else None
-            if field_match and field_match.group("field_key") and field_match.group("ref_id"):
-                ref_uuid = uuid.UUID(field_match.group("ref_id"))
-                if not found_refs.get(ref_uuid, None):
-                    found_refs[ref_uuid] = self._entry_find(not_found_throw=True, first=True, uuid=ref_uuid)
-                ref_value = getattr(found_refs[ref_uuid], KeepassDatabase._REF_MAP[field_match.group("field_key")])
-                if KeepassDatabase._REF_MAP[field_match.group("field_key")] == "password" and field_name != "password":
-                    ref_value = self._key_cache.encrypt(ref_value) if self._key_cache else None
-                if field.startswith("custom_properties."):
-                    item.set_custom_property(field_name, to_native(ref_value))
-                else:
-                    setattr(item, field_name, ref_value)
-        return item
-
     def get(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, Union[list, dict, AnyStr, None]]:
-        entry = self._entry_find(not_found_throw=True, **query.arguments)
+        entry = self._entry_find(not_found_throw=True, mask_password=True, **query.arguments)
         if not query.field:
             if not entry:
-                return False, {}
+                return False, None
             elif isinstance(entry, list):
-                return False, list(map(lambda item: EntryDetails(self._fix_references(item), self._key_cache).__dict__, entry))
+                return False, list(map(lambda item: EntryDetails(item, self._key_cache).__dict__, entry))
             else:
-                return False, EntryDetails(self._fix_references(entry), self._key_cache).__dict__
-
-        # get reference value
-        if query.field in ["title", "username", "password", "url", "notes", "uuid"]:
-            entry = self._fix_references(entry, [query.field])
+                return False, EntryDetails(entry, self._key_cache).__dict__
 
         # get entry value
         result = getattr(entry, query.field, None) or \
@@ -251,7 +274,7 @@ class KeepassDatabase(object):
         return self._entry_upsert(query, check_mode)
 
     def delete(self, query: RequestQuery, check_mode: bool = False) -> Tuple[bool, Optional[dict]]:
-        entry = self._entry_find(not_found_throw=True, **query.arguments)
+        entry = self._entry_find(not_found_throw=True, mask_password=False, **query.arguments)
         if query.field is None:
             self._database.delete_entry(entry) and not check_mode
         elif hasattr(entry, query.field):
@@ -268,7 +291,7 @@ class KeepassDatabase(object):
         if not check_mode:
             self._save()
         if query.field:
-            found_entry = self._entry_find(not_found_throw=True, **query.arguments)
+            found_entry = self._entry_find(not_found_throw=True, mask_password=True, **query.arguments)
             return True, EntryDetails(found_entry, self._key_cache).__dict__
         else:
             return True, None
