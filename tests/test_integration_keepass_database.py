@@ -90,7 +90,7 @@ class TestStorage(TestCase):
             "title": "test",
             "path": "one/two",
             "username": "test_username",
-            "password": None,
+            "password": '',
             "url": "url_updated",
             "notes": "test_notes",
             "custom_properties": {
@@ -106,7 +106,7 @@ class TestStorage(TestCase):
             "title": "test",
             "path": "new_path/one/two",
             "username": "",
-            "password": None,
+            "password": '',
             "url": "url_updated",
             "notes": None,
             "custom_properties": {
@@ -186,7 +186,7 @@ class TestStorage(TestCase):
     def test__entry_find_valid_by_path(self):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
         actual_entry = storage._entry_find(not_found_throw=True, mask_password=True, **self._search_path_valid.arguments)
-        self.assertDictEqual(dict(self._database_entry, password=None), EntryDetails(actual_entry, None).__dict__)
+        self.assertDictEqual(dict(self._database_entry, password="PASSWORD_VALUE_CLEARED"), EntryDetails(actual_entry).__dict__)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -195,7 +195,7 @@ class TestStorage(TestCase):
     def test__entry_find_valid_by_uuid(self):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
         actual_entry = storage._entry_find(not_found_throw=True, mask_password=True, first=True, uuid=self._database_entry_uuid_valid)
-        self.assertEqual(dict(self._database_entry, password=None), EntryDetails(actual_entry, None).__dict__)
+        self.assertEqual(dict(self._database_entry, password="PASSWORD_VALUE_CLEARED"), EntryDetails(actual_entry).__dict__)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -232,7 +232,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_upsert, None)
         has_changed, updated_entry = storage._entry_upsert(self._update_path_valid, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(self._update_entry_value, updated_entry)
+        self.assertDictEqual(dict(self._update_entry_value, password="PASSWORD_VALUE_CLEARED"), updated_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_upsert.location),
             call.v("Keepass: database opened - %s" % database_details_upsert.location)
@@ -243,7 +243,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_upsert, None)
         has_changed, updated_entry = storage._entry_upsert(self._noop_path_valid, check_mode=False)
         self.assertFalse(has_changed)
-        self.assertDictEqual(dict(self._clone_entry, password=None), updated_entry)
+        self.assertDictEqual(self._clone_entry, updated_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_upsert.location),
             call.v("Keepass: database opened - %s" % database_details_upsert.location)
@@ -254,7 +254,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_upsert, None)
         has_changed, updated_entry = storage._entry_upsert(self._insert_path_valid, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(self._insert_entry_value, updated_entry)
+        self.assertDictEqual(dict(self._insert_entry_value, password="PASSWORD_VALUE_CLEARED"), updated_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_upsert.location),
             call.v("Keepass: database opened - %s" % database_details_upsert.location)
@@ -264,7 +264,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
         has_changed, actual_entry = storage.get(self._search_path_valid, check_mode=False)
         self.assertFalse(has_changed)
-        self.assertDictEqual(dict(self._database_entry, password=None), actual_entry)
+        self.assertDictEqual(dict(self._database_entry, password="PASSWORD_VALUE_CLEARED"), actual_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -335,7 +335,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete, None)
         has_changed, deleted_entry = storage.delete(self._delete_password, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._database_entry, password=None), deleted_entry)
+        self.assertDictEqual(dict(self._database_entry, password="PASSWORD_VALUE_CLEARED"), deleted_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)
@@ -346,7 +346,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete, None)
         has_changed, deleted_entry = storage.delete(self._delete_custom, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._database_entry, password=None, custom_properties={}), deleted_entry)
+        self.assertDictEqual(dict(self._database_entry, password="PASSWORD_VALUE_CLEARED", custom_properties={}), deleted_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)
@@ -357,7 +357,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete, None)
         has_changed, deleted_entry = storage.delete(self._delete_file, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._database_entry, password=None, attachments=[]), deleted_entry)
+        self.assertDictEqual(dict(self._database_entry, password="PASSWORD_VALUE_CLEARED", attachments=[]), deleted_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)
@@ -368,7 +368,7 @@ class TestStorage(TestCase):
         storage = KeepassDatabase(self._display, database_details_delete, None)
         has_changed, deleted_entry = storage.delete(self._delete_clone, check_mode=False)
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._clone_entry, password=None), deleted_entry)
+        self.assertDictEqual(dict(self._clone_entry, password="PASSWORD_VALUE_CLEARED"), deleted_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)
@@ -398,7 +398,7 @@ class TestStorage(TestCase):
         self.assertFalse(actual["changed"])
         self.assertFalse(actual["failed"])
         self.assertDictEqual(self._search_path_valid.__dict__, actual["query"])
-        self.assertDictEqual(dict(self._database_entry, password=None), actual["stdout"])
+        self.assertDictEqual(dict(self._database_entry, password="PASSWORD_VALUE_CLEARED"), actual["stdout"])
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -411,7 +411,7 @@ class TestStorage(TestCase):
         self.assertTrue(actual["changed"])
         self.assertFalse(actual["failed"])
         self.assertDictEqual(self._insert_path_valid.__dict__, actual["query"])
-        self.assertDictEqual(self._insert_entry_value, actual["stdout"])
+        self.assertDictEqual(dict(self._insert_entry_value, password="PASSWORD_VALUE_CLEARED"), actual["stdout"])
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_upsert.location),
             call.v("Keepass: database opened - %s" % database_details_upsert.location)
@@ -424,7 +424,7 @@ class TestStorage(TestCase):
         self.assertTrue(actual["changed"])
         self.assertFalse(actual["failed"])
         self.assertDictEqual(self._update_path_valid.__dict__, actual["query"])
-        self.assertDictEqual(self._update_entry_value, actual["stdout"])
+        self.assertDictEqual(dict(self._update_entry_value, password="PASSWORD_VALUE_CLEARED"), actual["stdout"])
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_upsert.location),
             call.v("Keepass: database opened - %s" % database_details_upsert.location),
@@ -437,7 +437,7 @@ class TestStorage(TestCase):
         self.assertFalse(actual["changed"])
         self.assertFalse(actual["failed"])
         self.assertDictEqual(self._noop_path_valid.__dict__, actual["query"])
-        self.assertDictEqual(dict(self._clone_entry, password=None), actual["stdout"])
+        self.assertDictEqual(self._clone_entry, actual["stdout"])
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_upsert.location),
             call.v("Keepass: database opened - %s" % database_details_upsert.location)

@@ -107,41 +107,42 @@ class KeepassDatabase(object):
         self._database.save()
         self._display.v(u"Keepass: database saved - %s" % self._location)
 
-    def _dereference(self, field, field_value, mask_password):
+    def _dereference_field(self, field_value, mask_password):
         field_match = KeepassDatabase._REF_PATTERN.search(field_value) if field_value else None
-        if field_match and field_match.group("field_key") and field_match.group("ref_id"):
-            ref_field = field_match.group("field_key")
-            ref_uuid = uuid.UUID(field_match.group("ref_id"))
-            if not self._found_refs.get(ref_uuid, None):
-                self._found_refs[ref_uuid] = self._entry_find(not_found_throw=True, mask_password=mask_password, first=True, uuid=ref_uuid)
+        if not field_match:
+            return False, field_value
 
-            if ref_field == "I":
-                ref_value = self._fix_references(self._found_refs[ref_uuid], mask_password)
-                if field == "title":  # NB: workaround for keepassxc, since its ui does not support whole entry reference
-                    return ref_value
-            else:
-                ref_value = getattr(self._found_refs[ref_uuid], KeepassDatabase._REF_MAP[ref_field])
+        ref_field = field_match.group("field_key")
+        ref_uuid = uuid.UUID(field_match.group("ref_id"))
+        if not self._found_refs.get(ref_uuid, None):
+            self._found_refs[ref_uuid] = self._entry_find(not_found_throw=True, mask_password=mask_password, first=True, uuid=ref_uuid)
 
-            if ref_field == "P" and mask_password and ref_value:
-                ref_value = self._key_cache.encrypt(ref_value) if self._key_cache else "PASSWORD_VALUE_CLEARED"
-
-            return ref_value
+        if ref_field == "I":
+            return True, self._dereference_entry(self._found_refs[ref_uuid], mask_password)
         else:
-            return field_value
+            ref_value = getattr(self._found_refs[ref_uuid], KeepassDatabase._REF_MAP[ref_field])
+            return True, self._dereference_field(ref_value, mask_password)[1]
 
-    def _fix_references(self, item: Entry, mask_password, field_set=None) -> Entry:
+    def _dereference_entry(self, item: Entry, mask_password, field_set=None) -> Entry:
         for field in (field_set or
                       (["title", "username", "password", "url", "notes"] +
                        list(map(lambda k: "custom_properties." + k, item.custom_properties.keys())))):
             field_name = ".".join(field.split(".")[1:]) if field.startswith("custom_properties.") else field
             field_value = item.custom_properties.get(field_name, None) \
                 if field.startswith("custom_properties.") else getattr(item, field_name, None)
-            ref_value = self._dereference(field, field_value, mask_password)
-            if ref_value != field_value:
-                if field.startswith("custom_properties."):
+            value_was_updated, ref_value = self._dereference_field(field_value, mask_password)
+            if field == "password" and mask_password:
+                ref_value = self._key_cache.encrypt(ref_value) if self._key_cache else "PASSWORD_VALUE_CLEARED"
+                value_was_updated = True
+
+            if value_was_updated:
+                if field == "title":    # NB: workaround for keepassxc, since its ui does not support whole entry reference
+                    return ref_value
+                elif field.startswith("custom_properties."):
                     item.set_custom_property(field_name, to_native(ref_value))
                 else:
                     setattr(item, field_name, ref_value)
+
         return item
 
     def _entry_find(self, not_found_throw: bool, mask_password: bool, **arguments) -> Union[List[Entry], Entry, None]:
@@ -161,9 +162,9 @@ class KeepassDatabase(object):
         else:
             self._display.vv(u'KeePass: entry found - {"query": %s}' % arguments)
             if isinstance(find_result, list):
-                return list(map(lambda item: self._fix_references(item, mask_password), find_result))
+                return list(map(lambda item: self._dereference_entry(item, mask_password), find_result))
             else:
-                return self._fix_references(find_result, mask_password)
+                return self._dereference_entry(find_result, mask_password)
 
     def _entry_upsert(self, query: RequestQuery, check_mode: bool) -> Tuple[bool, Optional[dict]]:
         entry = self._entry_find(not_found_throw=False, mask_password=False, **query.arguments)
@@ -217,14 +218,14 @@ class KeepassDatabase(object):
                 elif key == "custom_properties":
                     for item in value.items():
                         cp_key = item[0]
-                        cp_value = self._dereference(None, item[1], False)
+                        cp_value = self._dereference_field(item[1], False)[1]
                         if cp_key not in entry.custom_properties.keys() or entry.custom_properties.get(cp_key, None) != cp_value:
                             if not (entry_is_updated or entry_is_created):
                                 entry.save_history()
                             entry.set_custom_property(cp_key, cp_value)
                             entry_is_updated = True
                 elif hasattr(entry, key):
-                    value = self._dereference(None, value, False)
+                    value = self._dereference_field(value, False)[1]
                     if getattr(entry, key, None) != value or (key in ["username", "password"] and getattr(entry, key, "") != ("" if value is None else value)):
                         if not (entry_is_updated or entry_is_created):
                             entry.save_history()
@@ -238,9 +239,9 @@ class KeepassDatabase(object):
                 entry.touch(True)
             self._save()
             fetched_entry = self._entry_find(not_found_throw=True, mask_password=True, **query.arguments)
-            return True, EntryDetails(fetched_entry, self._key_cache).__dict__
+            return True, EntryDetails(fetched_entry).__dict__
         elif entry:
-            return (check_mode or entry_is_created or entry_is_updated), EntryDetails(entry, self._key_cache).__dict__
+            return (check_mode or entry_is_created or entry_is_updated), EntryDetails(entry).__dict__
         else:
             return (check_mode or entry_is_created or entry_is_updated), None
 
@@ -250,9 +251,9 @@ class KeepassDatabase(object):
             if not entry:
                 return False, None
             elif isinstance(entry, list):
-                return False, list(map(lambda item: EntryDetails(item, self._key_cache).__dict__, entry))
+                return False, list(map(lambda item: EntryDetails(item).__dict__, entry))
             else:
-                return False, EntryDetails(entry, self._key_cache).__dict__
+                return False, EntryDetails(entry).__dict__
 
         # get entry value
         result = getattr(entry, query.field, None) or \
@@ -292,7 +293,7 @@ class KeepassDatabase(object):
             self._save()
         if query.field:
             found_entry = self._entry_find(not_found_throw=True, mask_password=True, **query.arguments)
-            return True, EntryDetails(found_entry, self._key_cache).__dict__
+            return True, EntryDetails(found_entry).__dict__
         else:
             return True, None
 
