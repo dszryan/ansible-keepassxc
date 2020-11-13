@@ -216,5 +216,7 @@ class ActionModule(ActionBase):
                              path=self._task.args.get("path", None),
                              field=self._task.args.get("field", None),
                              value=self._task.args.get("value", None))                                                                  # type: RequestQuery
+        check_mode = self._play_context.check_mode                                                                                      # type: bool
+        fail_silently = self._task.args.get("fail_silently", False)                                                                     # type: bool
 
-        return database.execute(query, self._play_context.check_mode, self._task.args.get("fail_silently", False))                      # type: Union[list, dict, AnyStr, None]
+        return database.execute(query, check_mode=check_mode, fail_silently=fail_silently)                                              # type: Union[list, dict, AnyStr, None]

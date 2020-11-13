@@ -61,6 +61,7 @@ class TestStorage(TestCase):
             },
             "attachments": [
                 {
+                    "binary": None,
                     "filename": "scratch.keyfile",
                     "length": 2048
                 }
@@ -98,7 +99,7 @@ class TestStorage(TestCase):
                 "new_custom_key": "new_custom_value"
             },
             "attachments": [
-                {"filename": "scratch.keyfile", "length": 18}
+                {"binary": None, "filename": "scratch.keyfile", "length": 18}
             ]
         }
         self._update_path_valid = RequestQuery(self._display, False, term='put://one/two/test#{"url": "url_updated", "custom_properties": {"test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value"}, "attachments": [{"filename": "scratch.keyfile", "binary": "this is a new file"}]}')
@@ -114,7 +115,7 @@ class TestStorage(TestCase):
                 "new_custom_key": "new_custom_value"
             },
             "attachments": [
-                {"filename": "new_file", "length": 18}
+                {"binary": None, "filename": "new_file", "length": 18}
             ]
         }
         self._insert_path_valid = RequestQuery(self._display, False, term='post://new_path/one/two/test#{"url": "url_updated", "custom_properties": {"test_custom_key": "test_custom_value_updated", "new_custom_key": "new_custom_value"}, "attachments": [{"filename": "new_file", "binary": "this is a new file"}]}')
@@ -313,7 +314,7 @@ class TestStorage(TestCase):
 
     def test_get_invalid(self):
         storage = KeepassDatabase(self._display, self._database_details_valid, None)
-        self.assertRaises(AttributeError, storage.get, self._query_invalid, False)
+        self.assertRaises(AttributeError, storage.get, self._query_invalid, **dict(check_mode=False))
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % self._database_details_valid.location),
             call.v("Keepass: database opened - %s" % self._database_details_valid.location)
@@ -377,7 +378,7 @@ class TestStorage(TestCase):
     def test_delete_valid_no_entry_exists(self):
         database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_delete, None)
-        self.assertRaises(AnsibleError, storage.delete, self._delete_invalid_entry, False)
+        self.assertRaises(AnsibleError, storage.delete, self._delete_invalid_entry, **dict(check_mode=False))
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)
@@ -386,7 +387,7 @@ class TestStorage(TestCase):
     def test_delete_valid_no_property_exists(self):
         database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_delete, None)
-        self.assertRaises(AttributeError, storage.delete, self._delete_invalid_property, False)
+        self.assertRaises(AttributeError, storage.delete, self._delete_invalid_property, **dict(check_mode=False))
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)

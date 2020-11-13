@@ -33,6 +33,15 @@ DOCUMENTATION = """
             type: dict
             required: True
             version_added: "1.0"
+        include_files:
+            description:
+                - when true, will include the files embedded in the entries
+                - when false, will only indicate file sizes
+            default: False
+            type: bool
+            choices:
+                - False
+                - True
         fail_silently:
             description:
                 - when true, exception raised are muted and returned as part of the result.
@@ -74,6 +83,7 @@ class LookupModule(LookupBase):
         database_details = DatabaseDetails(self._display, **self.get_option("database", {}).copy())                 # type: DatabaseDetails
         key_cache = KeepassKeyCache(self._display, database_details, variables.get("inventory_hostname", None))     # type: KeepassKeyCache
         database = KeepassDatabase(self._display, database_details, key_cache)                                      # type: KeepassDatabase
+        include_files = self.get_option("include_files", False)                                                     # type: bool
         fail_silently = self.get_option("fail_silently", False)                                                     # type: bool
 
         return list(map(lambda term:
@@ -82,5 +92,6 @@ class LookupModule(LookupBase):
                                          read_only=True,
                                          term=term),
                             check_mode=False,
+                            include_files=include_files,
                             fail_silently=fail_silently).get("stdout", None),
                         terms))                                                                                     # type: List[Union[list, dict, AnyStr, None]]
