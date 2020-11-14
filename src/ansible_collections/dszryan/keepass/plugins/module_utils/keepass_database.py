@@ -234,12 +234,13 @@ class KeepassDatabase(object):
                             entry.set_custom_property(cp_key, cp_value)
                             entry_is_updated = True
                 elif hasattr(entry, key):
-                    value = self._dereference_field(entry, value, False)[1]
-                    if getattr(entry, key, None) != value or (key in ["username", "password"] and getattr(entry, key, "") != ("" if value is None else value)):
-                        if not (entry_is_updated or entry_is_created):
-                            entry.save_history()
-                        setattr(entry, key, value)
-                        entry_is_updated = True
+                    if key != "uuid":
+                        value = self._dereference_field(entry, value, False)[1]
+                        if getattr(entry, key, None) != value or (key in ["username", "password"] and getattr(entry, key, "") != ("" if value is None else value)):
+                            if not (entry_is_updated or entry_is_created):
+                                entry.save_history()
+                            setattr(entry, key, value)
+                            entry_is_updated = True
                 else:
                     raise AnsibleParserError(AnsibleError("unknown value provided %s" % key))
 

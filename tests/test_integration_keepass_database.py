@@ -50,6 +50,7 @@ class TestStorage(TestCase):
         self._database_entry_uuid_valid = UUID("9366b38f-2ee9-412f-a6ba-b2ab10d1f100")
         self._database_entry_uuid_invalid = UUID("00000000-0000-0000-0000-000000000000")
         self._database_entry = {
+            "uuid": "9366b38f-2ee9-412f-a6ba-b2ab10d1f100",
             "title": "test",
             "path": "one/two",
             "username": "test_username",
@@ -88,6 +89,7 @@ class TestStorage(TestCase):
         self._post_path_invalid = RequestQuery(self._display, False, term="post://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
         self._noop_path_valid = RequestQuery(self._display, False, term="put://one/two/clone#" + json.dumps(self._duplicate_without_keys(self._clone_entry, ["title", "path"])))
         self._update_entry_value = {
+            "uuid": "9366b38f-2ee9-412f-a6ba-b2ab10d1f100",
             "title": "test",
             "path": "one/two",
             "username": "test_username",
@@ -243,6 +245,8 @@ class TestStorage(TestCase):
         database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_upsert, None)
         has_changed, updated_entry = storage._entry_upsert(self._noop_path_valid, check_mode=False)
+        self._clone_entry.pop('uuid')
+        updated_entry.pop('uuid')
         self.assertFalse(has_changed)
         self.assertDictEqual(self._clone_entry, updated_entry)
         self._display.assert_has_calls([
@@ -254,6 +258,7 @@ class TestStorage(TestCase):
         database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_upsert, None)
         has_changed, updated_entry = storage._entry_upsert(self._insert_path_valid, check_mode=False)
+        updated_entry.pop('uuid')
         self.assertTrue(has_changed)
         self.assertDictEqual(dict(self._insert_entry_value, password="PASSWORD_VALUE_CLEARED"), updated_entry)
         self._display.assert_has_calls([
@@ -368,8 +373,11 @@ class TestStorage(TestCase):
         database_details_delete = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_delete, None)
         has_changed, deleted_entry = storage.delete(self._delete_clone, check_mode=False)
+        expected = dict(self._clone_entry, password="PASSWORD_VALUE_CLEARED")
+        expected.pop('uuid')
+        deleted_entry.pop('uuid')
         self.assertTrue(has_changed)
-        self.assertDictEqual(dict(self._clone_entry, password="PASSWORD_VALUE_CLEARED"), deleted_entry)
+        self.assertDictEqual(expected, deleted_entry)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_delete.location),
             call.v("Keepass: database opened - %s" % database_details_delete.location)
@@ -409,10 +417,12 @@ class TestStorage(TestCase):
         database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_upsert, None)
         actual = storage.execute(self._insert_path_valid, check_mode=False, fail_silently=True)
+        actual_stdout = actual["stdout"]
+        actual_stdout.pop('uuid')
         self.assertTrue(actual["changed"])
         self.assertFalse(actual["failed"])
         self.assertDictEqual(self._insert_path_valid.__dict__, actual["query"])
-        self.assertDictEqual(dict(self._insert_entry_value, password="PASSWORD_VALUE_CLEARED"), actual["stdout"])
+        self.assertDictEqual(dict(self._insert_entry_value, password="PASSWORD_VALUE_CLEARED"), actual_stdout)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_upsert.location),
             call.v("Keepass: database opened - %s" % database_details_upsert.location)
@@ -435,10 +445,13 @@ class TestStorage(TestCase):
         database_details_upsert = self._copy_database("temp_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16)))
         storage = KeepassDatabase(self._display, database_details_upsert, None)
         actual = storage.execute(self._noop_path_valid, check_mode=False, fail_silently=False)
+        self._clone_entry.pop('uuid')
+        actual_stdout = actual["stdout"]
+        actual_stdout.pop('uuid')
         self.assertFalse(actual["changed"])
         self.assertFalse(actual["failed"])
         self.assertDictEqual(self._noop_path_valid.__dict__, actual["query"])
-        self.assertDictEqual(self._clone_entry, actual["stdout"])
+        self.assertDictEqual(self._clone_entry, actual_stdout)
         self._display.assert_has_calls([
             call.vv('Keepass: database DEFAULT OPEN - %s' % database_details_upsert.location),
             call.v("Keepass: database opened - %s" % database_details_upsert.location)

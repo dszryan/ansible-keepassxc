@@ -43,8 +43,9 @@ class KeepassKeyCache(object):
         from ansible.vars.fact_cache import FactCache
         vault = VaultLib(self._secrets)
         cache = FactCache()
-        host_ansible_local = cache.copy().get(self._hostname, {}).get("ansible_local", {}) or {}                                                                    # type: dict
-        keepass_location = ([key for key in host_ansible_local.get(KeepassKeyCache.fact_name(), []) if key.get("location", "") == self._location] or [None])[0]     # type: Union[dict, None]
+        host_ansible_local = cache.copy().get(self._hostname, {}).get("ansible_local", {}) or {}        # type: dict
+        keepass_location = ([key for key in host_ansible_local.get(KeepassKeyCache.fact_name(), [])
+                             if key.get("location", "") == self._location] or [None])[0]                # type: Union[dict, None]
         cached_key = base64.decodebytes(vault.decrypt(keepass_location.get("transformed_key"))) if keepass_location else None
         self._display.vv(u"Keepass: transformation cache key was%s found [%s]" % (("" if cached_key else " not"), self._location))
         return cached_key
@@ -69,7 +70,9 @@ class KeepassKeyCache(object):
 
     def encrypt(self, plain_text: AnyStr) -> str:
         from ansible.parsing.vault import VaultLib
-        return "vault! | \\n\\t\\t\\t" + VaultLib(self._secrets).encrypt(plaintext=plain_text).decode().replace("\n", "\\n\\t\\t\\t").strip("\\t") if self.can_cache else None
+        return "vault! | \\n\\t\\t\\t" + \
+               VaultLib(self._secrets).encrypt(plaintext=plain_text).decode().replace("\n", "\\n\\t\\t\\t").strip("\\t") \
+            if self.can_cache else None
 
     # def decrypt(self, vault_text: str) -> AnyStr:
     #     from ansible.parsing.vault import VaultLib

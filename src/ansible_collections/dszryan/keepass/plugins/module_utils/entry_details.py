@@ -2,16 +2,16 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import uuid
 from base64 import b64encode
 from typing import Optional
 
 from pykeepass.entry import Entry
 
-from ansible_collections.dszryan.keepass.plugins.module_utils.keepass_key_cache import KeepassKeyCache
-
 
 class EntryDetails(object):
     def __init__(self, entry: Entry, include_files: bool = False):
+        self.uuid = entry.uuid.__str__()                                                                    # type: str
         self.title = entry.title                                                                            # type: str
         self.path = entry.group.path.strip("/")                                                             # type: str
         self.username = entry.username                                                                      # type: Optional[str]
