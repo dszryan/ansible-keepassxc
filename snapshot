@@ -2,8 +2,10 @@
 BACKUP_FOLDER="./.backup"
 REPO_FOLDER="$(dirname "$0")"
 REPO_NAME="$(basename "$(dirname "$(readlink -f "$0")")")"
-LAST_BACKUP=$(ls -t "$BACKUP_FOLDER"/$REPO_NAME.*.gpg 2>/dev/null | head -n1 || echo "")
-export gitdir=$([[ -d ".git"  &&  ! -f ".git" ]] && echo .git || echo $(sed -E "s|gitdir: (.*)|\1|g" .git))
+# shellcheck disable=SC2012
+LAST_BACKUP="$(ls -t "$BACKUP_FOLDER/$REPO_NAME.*.gpg" 2>/dev/null | head -n1 || echo "")"
+# shellcheck disable=SC2005
+GIT_DIR=$([[ -d ".git"  &&  ! -f ".git" ]] && echo ".git" || echo "$(sed -E 's|gitdir: (.*)|\1|g' .git)")
 
 while true; do
     case "$1" in
@@ -12,7 +14,8 @@ while true; do
         shift 2
         ;;
     -r)
-        restore=$([[ -n "$2" ]] && echo $2 || echo $LAST_BACKUP)
+        restore=$([[ -n "$2" ]] && echo "$2" || echo "$LAST_BACKUP")
+        # shellcheck disable=SC2015
         [[ -n "$2" ]] && shift 2 || shift 1
         ;;
     *)
@@ -25,10 +28,11 @@ function backup() {
     rm -rf "$BACKUP_FOLDER/STAGING/$REPO_NAME.mirror" || true
     git clone --mirror "$REPO_FOLDER" "$BACKUP_FOLDER/STAGING/$REPO_NAME.mirror/.git" 2>/dev/null
     mkdir -p "$BACKUP_FOLDER/STAGING/$REPO_NAME.mirror/.git/hooks"
-    cp -a $gitdir/hooks/post-commit "$BACKUP_FOLDER/STAGING/$REPO_NAME.mirror/.git/hooks"
+    cp -a "$GIT_DIR/hooks/post-commit" "$BACKUP_FOLDER/STAGING/$REPO_NAME.mirror/.git/hooks"
+    # shellcheck disable=SC2086
     tar -cz -C "$BACKUP_FOLDER/STAGING/$REPO_NAME.mirror" .git | \
         gpg --batch --yes --hidden-recipient $1 --no-emit-version --encrypt \
-        --output "$BACKUP_FOLDER/$REPO_NAME.$(date '+%Y-%m-%d').gpg" 2>/dev/null
+            --output "$BACKUP_FOLDER/$REPO_NAME.$(date '+%Y-%m-%d').gpg" 2>/dev/null
     rm -rf "$BACKUP_FOLDER/STAGING/$REPO_NAME.mirror" || true
 }
 
@@ -40,12 +44,17 @@ function restore() {
 
     rm -rf "$BACKUP_FOLDER/STAGING/$REPO_NAME" || true
     mkdir -p "$BACKUP_FOLDER/STAGING/$REPO_NAME"
-    gpg --try-secret-key $1 --decrypt $2 | tar xz -C "$BACKUP_FOLDER/STAGING/$REPO_NAME"
+    # shellcheck disable=SC2086
+    gpg --try-secret-key $1 --decrypt "$2" | tar xz -C "$BACKUP_FOLDER/STAGING/$REPO_NAME"
+    # shellcheck disable=SC2164
     cd "$BACKUP_FOLDER/STAGING/$REPO_NAME"
     git init
     git checkout --force
     echo git submodule update --init --recursive
+    # shellcheck disable=SC2164
     cd -
 }
 
-[[ -z "$restore" ]] && backup $key || restore $key $restore
+# shellcheck disable=SC2015
+# shellcheck disable=SC2086
+[[ -z "$restore" ]] && backup $key || restore $key "$restore"
