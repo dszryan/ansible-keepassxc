@@ -11,7 +11,6 @@ from ansible.inventory.host import Host
 from ansible.parsing.dataloader import DataLoader
 from ansible.parsing.yaml.objects import AnsibleMapping
 from ansible.plugins.inventory import BaseInventoryPlugin
-from ansible.utils.display import Display
 
 
 DOCUMENTATION = """
