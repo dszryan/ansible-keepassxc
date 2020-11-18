@@ -86,12 +86,14 @@ class LookupModule(LookupBase):
         include_files = self.get_option("include_files", False)                                                     # type: bool
         fail_silently = self.get_option("fail_silently", False)                                                     # type: bool
 
-        return list(map(lambda term:
-                        database.execute(
-                            RequestQuery(self._display,
-                                         read_only=True,
-                                         term=term),
-                            check_mode=False,
-                            include_files=include_files,
-                            fail_silently=fail_silently).get("stdout", None),
-                        terms))                                                                                     # type: List[Union[list, dict, AnyStr, None]]
+        result = list(map(lambda term:
+                          database.execute(
+                              RequestQuery(self._display,
+                                           read_only=True,
+                                           term=term),
+                              check_mode=False,
+                              include_files=include_files,
+                              fail_silently=fail_silently).get("stdout", None),
+                          terms))                                                                                   # type: List[Union[list, dict, AnyStr, None]]
+
+        return list(filter(lambda item: item is not None, result))

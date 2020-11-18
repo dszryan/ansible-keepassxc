@@ -2,7 +2,6 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-import uuid
 from base64 import b64encode
 from typing import Optional
 

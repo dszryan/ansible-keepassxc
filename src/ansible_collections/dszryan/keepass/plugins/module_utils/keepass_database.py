@@ -141,7 +141,7 @@ class KeepassDatabase(object):
                 if field.startswith("custom_properties.") else getattr(item, field_name, None)
             value_was_updated, ref_value = self._dereference_field(item, field_value, mask_password, lookup_chain)
             if field == "password" and mask_password:
-                ref_value = self._key_cache.encrypt(ref_value) if self._key_cache else "PASSWORD_VALUE_CLEARED"
+                ref_value = (self._key_cache.encrypt(ref_value) if self._key_cache else "PASSWORD_VALUE_CLEARED") or ""
                 value_was_updated = True
 
             if value_was_updated:
