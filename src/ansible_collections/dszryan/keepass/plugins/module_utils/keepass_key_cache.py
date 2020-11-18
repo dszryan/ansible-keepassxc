@@ -3,6 +3,7 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import base64
+import json
 from os import PathLike
 from typing import Union, Optional, AnyStr
 
@@ -68,12 +69,7 @@ class KeepassKeyCache(object):
             cache.update({self._hostname: host_facts})
             self._display.vv(u"Keepass: transformation cache key was set [%s]" % self._location)
 
-    def encrypt(self, plain_text: AnyStr) -> str:
+    def encrypt(self, plain_text: AnyStr) -> Optional[str]:
         from ansible.parsing.vault import VaultLib
-        return "vault! " + \
-               VaultLib(self._secrets).encrypt(plaintext=plain_text).decode().replace("\n", "") \
+        return json.dumps(dict(__ansible_vault=VaultLib(self._secrets).encrypt(plaintext=plain_text).decode())) \
             if self.can_cache else None
-
-    # def decrypt(self, vault_text: str) -> AnyStr:
-    #     from ansible.parsing.vault import VaultLib
-    #     return VaultLib(self._secrets).decrypt(vault_text) if self.can_cache else None
