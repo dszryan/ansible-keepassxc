@@ -69,7 +69,25 @@ class KeepassKeyCache(object):
             cache.update({self._hostname: host_facts})
             self._display.vv(u"Keepass: transformation cache key was set [%s]" % self._location)
 
+    # noinspection PyBroadException
     def encrypt(self, plain_text: AnyStr) -> Optional[str]:
-        from ansible.parsing.vault import VaultLib
-        return json.dumps(dict(__ansible_vault=VaultLib(self._secrets).encrypt(plaintext=plain_text).decode())) \
-            if self.can_cache else None
+        result: Optional[str] = None
+        try:
+            from ansible.parsing.ajson import AnsibleJSONDecoder
+            if plain_text:
+                _ = json.loads(plain_text, cls=AnsibleJSONDecoder)
+                result = plain_text
+        except:
+            pass
+        finally:
+            if not result:
+                if not self.can_cache:
+                    result = None
+                else:
+                    from ansible.parsing.vault import VaultLib
+                    from ansible.module_utils.common.json import AnsibleJSONEncoder
+
+                    vault_value = dict(__ansible_vault=VaultLib(self._secrets).encrypt(plaintext=plain_text).decode())
+                    result = json.dumps(vault_value, cls=AnsibleJSONEncoder, sort_keys=True, indent=4, preprocess_unsafe=True)
+
+        return result

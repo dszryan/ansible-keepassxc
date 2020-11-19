@@ -8,10 +8,9 @@ from typing import Dict, List
 from ansible.inventory.data import InventoryData
 from ansible.inventory.group import Group
 from ansible.inventory.host import Host
+from ansible.parsing.ajson import AnsibleJSONDecoder
 from ansible.parsing.dataloader import DataLoader
-from ansible.parsing.yaml.objects import AnsibleMapping
 from ansible.plugins.inventory import BaseInventoryPlugin
-
 
 DOCUMENTATION = """
     name: inventory
@@ -34,18 +33,18 @@ DOCUMENTATION = """
         generator:
             description: defines inventory
             required: true
-            type: yaml
 """
 
 
 class InventoryModule(BaseInventoryPlugin):
     NAME = 'inventory'
     database_details: dict
-    generator: AnsibleMapping
+    generator: dict
 
-    def _do_template(self, pattern, variables):
-        self.templar.available_variables = variables
-        return json.loads(self.templar.do_template(pattern))
+    def _do_template(self, variables, pattern):
+        if variables:
+            self.templar.available_variables = variables
+        return json.loads(self.templar.do_template(pattern), cls=AnsibleJSONDecoder)
 
     def _build(self, inventory_yaml: List[Dict]):
         group_item: Dict
@@ -71,9 +70,8 @@ class InventoryModule(BaseInventoryPlugin):
     def parse(self, inventory: InventoryData, loader: DataLoader, path: str, cache=True):
         super(InventoryModule, self).parse(inventory, loader, path, cache)
         self._read_config_data(path)
-        self.database_details = self.get_option("database")
-        self.generator = self.get_option("generator")
+        self.database_details = dict(self.get_option("database"))
+        self.generator = dict(self.get_option("generator"))
 
         generator_vars = dict(self.generator["vars"], database=self.database_details, inventory_hostname="localhost")
-        inventory_yaml = self._do_template(self.generator["inventory"], generator_vars)
-        self._build(inventory_yaml)
+        self._build(self._do_template(generator_vars, self.generator["inventory"]))
