@@ -81,12 +81,11 @@ class KeepassKeyCache(object):
             pass
         finally:
             if not result:
-                if not self.can_cache:
+                if not self._secrets:
                     result = None
                 else:
-                    from ansible.parsing.vault import VaultLib
                     from ansible.module_utils.common.json import AnsibleJSONEncoder
-
+                    from ansible.parsing.vault import VaultLib
                     vault_value = dict(__ansible_vault=VaultLib(self._secrets).encrypt(plaintext=plain_text).decode())
                     result = json.dumps(vault_value, cls=AnsibleJSONEncoder, sort_keys=True, indent=4, preprocess_unsafe=True)
 
